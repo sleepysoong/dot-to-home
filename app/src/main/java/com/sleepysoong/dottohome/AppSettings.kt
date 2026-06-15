@@ -19,6 +19,8 @@ data class AppConfig(
     val homeUseCustomImage: Boolean = false,
     val homeDotOffsetY: Float = 0.55f,
 
+    // Custom label text for the wallpaper card
+    val customLabel: String = "디데이 진행률"
 ) {
     companion object {
         fun getTodayKST(): Long {

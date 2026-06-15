@@ -219,7 +219,7 @@ object WallpaperGenerator {
         }
 
         val textY = cardTop + cardPadding + 50f
-        canvas.drawText("디데이 진행률", cardLeft + cardPadding, textY - 40f, labelPaint)
+        canvas.drawText(config.customLabel, cardLeft + cardPadding, textY - 40f, labelPaint)
         val ddayStr = if (remainingDays == 0) "D-DAY" else "D-$remainingDays"
         canvas.drawText(ddayStr, cardLeft + cardPadding, textY + 35f, ddayPaint)
         val percentStr = String.format("%.1f%%", progressPercent)

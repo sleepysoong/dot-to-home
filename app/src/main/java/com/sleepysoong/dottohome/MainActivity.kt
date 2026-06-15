@@ -15,6 +15,8 @@ import androidx.compose.animation.core.*
 import androidx.compose.foundation.Image
 import androidx.compose.foundation.background
 import androidx.compose.foundation.clickable
+import androidx.compose.foundation.gestures.detectHorizontalDragGestures
+import androidx.compose.foundation.gestures.detectTapGestures
 import androidx.compose.foundation.interaction.MutableInteractionSource
 import androidx.compose.foundation.layout.*
 import androidx.compose.foundation.rememberScrollState
@@ -29,6 +31,7 @@ import androidx.compose.ui.draw.clip
 import androidx.compose.ui.graphics.Brush
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.graphics.asImageBitmap
+import androidx.compose.ui.input.pointer.pointerInput
 import androidx.compose.ui.layout.ContentScale
 import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.text.TextStyle
@@ -48,7 +51,10 @@ import com.kyant.backdrop.highlight.Highlight
 import com.kyant.backdrop.highlight.HighlightStyle
 import com.kyant.backdrop.shadow.Shadow
 import com.kyant.shapes.Capsule
+import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.Dispatchers
+import kotlinx.coroutines.Job
+import kotlinx.coroutines.delay
 import kotlinx.coroutines.launch
 import kotlinx.coroutines.withContext
 import java.io.File
@@ -115,6 +121,48 @@ class MainActivity : ComponentActivity() {
     }
 }
 
+// Global debouncer for wallpaper applying
+private var applyJob: Job? = null
+
+fun applyWallpaperDebounced(
+    context: Context,
+    coroutineScope: CoroutineScope,
+    onStart: () -> Unit,
+    onFinish: () -> Unit
+) {
+    applyJob?.cancel()
+    applyJob = coroutineScope.launch(Dispatchers.IO) {
+        delay(800) // 800ms debounce
+        withContext(Dispatchers.Main) { onStart() }
+        try {
+            val wm = WallpaperManager.getInstance(context)
+            val metrics = context.resources.displayMetrics
+            val width = metrics.widthPixels
+            val height = metrics.heightPixels
+
+            val lockBitmap = WallpaperGenerator.generate(context, width, height, isLockScreen = true)
+            val homeBitmap = WallpaperGenerator.generate(context, width, height, isLockScreen = false)
+
+            if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.N) {
+                wm.setBitmap(lockBitmap, null, true, WallpaperManager.FLAG_LOCK)
+                wm.setBitmap(homeBitmap, null, true, WallpaperManager.FLAG_SYSTEM)
+            } else {
+                wm.setBitmap(homeBitmap)
+            }
+            withContext(Dispatchers.Main) {
+                Toast.makeText(context, "배경화면이 적용되었습니다.", Toast.LENGTH_SHORT).show()
+            }
+        } catch (e: Exception) {
+            e.printStackTrace()
+            withContext(Dispatchers.Main) {
+                Toast.makeText(context, "배경화면 적용 실패: ${e.message}", Toast.LENGTH_LONG).show()
+            }
+        } finally {
+            withContext(Dispatchers.Main) { onFinish() }
+        }
+    }
+}
+
 @OptIn(ExperimentalMaterial3Api::class)
 @Composable
 fun DotToHomeDashboard() {
@@ -124,6 +172,19 @@ fun DotToHomeDashboard() {
     var config by remember { mutableStateOf(AppSettings.getConfig(context)) }
     var previewKey by remember { mutableIntStateOf(0) }
     var isApplying by remember { mutableStateOf(false) }
+
+    val updateConfig: (AppConfig) -> Unit = { newConfig ->
+        config = newConfig
+        AppSettings.saveConfig(context, newConfig)
+        previewKey++
+        
+        applyWallpaperDebounced(
+            context = context,
+            coroutineScope = coroutineScope,
+            onStart = { isApplying = true },
+            onFinish = { isApplying = false }
+        )
+    }
 
     // Date picker states
     var showDatePicker by remember { mutableStateOf(false) }
@@ -155,9 +216,7 @@ fun DotToHomeDashboard() {
                 coroutineScope.launch(Dispatchers.IO) {
                     copyUriToInternalStorage(context, uri, "wallpaper_lock_bg.jpg")
                     withContext(Dispatchers.Main) {
-                        config = config.copy(lockUseCustomImage = true)
-                        AppSettings.saveConfig(context, config)
-                        previewKey++
+                        updateConfig(config.copy(lockUseCustomImage = true))
                         Toast.makeText(context, "잠금화면 배경이 설정되었습니다", Toast.LENGTH_SHORT).show()
                     }
                 }
@@ -172,9 +231,7 @@ fun DotToHomeDashboard() {
                 coroutineScope.launch(Dispatchers.IO) {
                     copyUriToInternalStorage(context, uri, "wallpaper_home_bg.jpg")
                     withContext(Dispatchers.Main) {
-                        config = config.copy(homeUseCustomImage = true)
-                        AppSettings.saveConfig(context, config)
-                        previewKey++
+                        updateConfig(config.copy(homeUseCustomImage = true))
                         Toast.makeText(context, "홈화면 배경이 설정되었습니다", Toast.LENGTH_SHORT).show()
                     }
                 }
@@ -207,27 +264,40 @@ fun DotToHomeDashboard() {
             horizontalAlignment = Alignment.CenterHorizontally
         ) {
             // Header
-            Column(
-                horizontalAlignment = Alignment.CenterHorizontally,
-                modifier = Modifier.padding(top = 28.dp, bottom = 12.dp)
+            Row(
+                modifier = Modifier
+                    .fillMaxWidth()
+                    .padding(top = 28.dp, bottom = 12.dp, start = 24.dp, end = 24.dp),
+                horizontalArrangement = Arrangement.SpaceBetween,
+                verticalAlignment = Alignment.CenterVertically
             ) {
-                Text(
-                    text = "도트 투 홈",
-                    fontSize = 26.sp,
-                    color = Color(0xFF1A1A1A),
-                    fontWeight = FontWeight.Bold,
-                    fontFamily = Pretendard,
-                    letterSpacing = TRACKING.sp
-                )
-                Text(
-                    text = "매일 업데이트되는 디데이 배경화면",
-                    fontSize = 13.sp,
-                    color = Color(0xFF999999),
-                    fontWeight = FontWeight.Normal,
-                    fontFamily = Pretendard,
-                    letterSpacing = TRACKING.sp,
-                    modifier = Modifier.padding(top = 4.dp)
-                )
+                Column {
+                    Text(
+                        text = "도트 투 홈",
+                        fontSize = 26.sp,
+                        color = Color(0xFF1A1A1A),
+                        fontWeight = FontWeight.Bold,
+                        fontFamily = Pretendard,
+                        letterSpacing = TRACKING.sp
+                    )
+                    Text(
+                        text = "매일 업데이트되는 디데이 배경화면",
+                        fontSize = 13.sp,
+                        color = Color(0xFF999999),
+                        fontWeight = FontWeight.Normal,
+                        fontFamily = Pretendard,
+                        letterSpacing = TRACKING.sp,
+                        modifier = Modifier.padding(top = 4.dp)
+                    )
+                }
+
+                if (isApplying) {
+                    CircularProgressIndicator(
+                        modifier = Modifier.size(24.dp),
+                        color = Color(0xFF1A1A1A),
+                        strokeWidth = 2.dp
+                    )
+                }
             }
 
             // Scrollable content
@@ -341,6 +411,40 @@ fun DotToHomeDashboard() {
                     }
                 }
 
+                // Custom Label setting
+                GlassCard(backdrop = mainBackdrop) {
+                    Column(verticalArrangement = Arrangement.spacedBy(10.dp)) {
+                        PretendardText(
+                            text = "배경화면 텍스트 설정",
+                            fontSize = 14,
+                            fontWeight = FontWeight.Bold,
+                            color = Color(0xFF1A1A1A)
+                        )
+                        HorizontalDivider(color = Color(0xFFE8E8E8), thickness = 1.dp)
+
+                        var textValue by remember(config.customLabel) { mutableStateOf(config.customLabel) }
+
+                        OutlinedTextField(
+                            value = textValue,
+                            onValueChange = { 
+                                textValue = it
+                                updateConfig(config.copy(customLabel = it))
+                            },
+                            modifier = Modifier.fillMaxWidth(),
+                            textStyle = TextStyle(fontFamily = Pretendard, fontSize = 14.sp, color = Color(0xFF1A1A1A)),
+                            singleLine = true,
+                            shape = RoundedCornerShape(12.dp),
+                            colors = OutlinedTextFieldDefaults.colors(
+                                focusedBorderColor = Color(0xFF1A1A1A),
+                                unfocusedBorderColor = Color(0xFFD0D0D0),
+                                focusedContainerColor = Color.White.copy(alpha = 0.5f),
+                                unfocusedContainerColor = Color.White.copy(alpha = 0.3f),
+                                cursorColor = Color(0xFF1A1A1A)
+                            )
+                        )
+                    }
+                }
+
                 // Tab: Lock / Home
                 Row(
                     modifier = Modifier
@@ -380,12 +484,12 @@ fun DotToHomeDashboard() {
                     remainingDays = remainingDays,
                     progressPercent = progressPercent,
                     onDotOffsetYChange = { newY ->
-                        config = if (selectedTab == 0) {
+                        val newConfig = if (selectedTab == 0) {
                             config.copy(lockDotOffsetY = newY)
                         } else {
                             config.copy(homeDotOffsetY = newY)
                         }
-                        AppSettings.saveConfig(context, config)
+                        updateConfig(newConfig)
                     },
                     onPickPhoto = {
                         val request = androidx.activity.result.PickVisualMediaRequest(
@@ -395,63 +499,17 @@ fun DotToHomeDashboard() {
                         else homePhotoLauncher.launch(request)
                     },
                     onResetDefault = {
-                        if (selectedTab == 0) {
-                            config = config.copy(lockUseCustomImage = false)
+                        val newConfig = if (selectedTab == 0) {
+                            config.copy(lockUseCustomImage = false)
                         } else {
-                            config = config.copy(homeUseCustomImage = false)
+                            config.copy(homeUseCustomImage = false)
                         }
-                        AppSettings.saveConfig(context, config)
-                        previewKey++
+                        updateConfig(newConfig)
                         Toast.makeText(context, "기본 배경으로 초기화되었습니다", Toast.LENGTH_SHORT).show()
                     }
                 )
 
-                Spacer(modifier = Modifier.height(100.dp))
-            }
-
-            // Bottom apply button
-            Box(
-                modifier = Modifier
-                    .fillMaxWidth()
-                    .padding(start = 24.dp, end = 24.dp, bottom = 24.dp)
-            ) {
-                MonoLiquidButton(
-                    text = if (isApplying) "적용 중..." else "배경화면 적용",
-                    backdrop = mainBackdrop,
-                    enabled = !isApplying,
-                    onClick = {
-                        isApplying = true
-                        coroutineScope.launch(Dispatchers.IO) {
-                            try {
-                                val wm = WallpaperManager.getInstance(context)
-                                val metrics = context.resources.displayMetrics
-                                val width = metrics.widthPixels
-                                val height = metrics.heightPixels
-
-                                val lockBitmap = WallpaperGenerator.generate(context, width, height, isLockScreen = true)
-                                val homeBitmap = WallpaperGenerator.generate(context, width, height, isLockScreen = false)
-
-                                if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.N) {
-                                    wm.setBitmap(lockBitmap, null, true, WallpaperManager.FLAG_LOCK)
-                                    wm.setBitmap(homeBitmap, null, true, WallpaperManager.FLAG_SYSTEM)
-                                } else {
-                                    wm.setBitmap(homeBitmap)
-                                }
-
-                                withContext(Dispatchers.Main) {
-                                    Toast.makeText(context, "배경화면이 적용되었습니다!", Toast.LENGTH_SHORT).show()
-                                    isApplying = false
-                                }
-                            } catch (e: Exception) {
-                                e.printStackTrace()
-                                withContext(Dispatchers.Main) {
-                                    Toast.makeText(context, "배경화면 적용 실패: ${e.message}", Toast.LENGTH_LONG).show()
-                                    isApplying = false
-                                }
-                            }
-                        }
-                    }
-                )
+                Spacer(modifier = Modifier.height(60.dp))
             }
         }
     }
@@ -468,13 +526,12 @@ fun DotToHomeDashboard() {
                 TextButton(onClick = {
                     val selected = datePickerState.selectedDateMillis
                     if (selected != null) {
-                        config = if (pickingStartDate) {
+                        val newConfig = if (pickingStartDate) {
                             config.copy(startDate = selected)
                         } else {
                             config.copy(targetDate = selected)
                         }
-                        AppSettings.saveConfig(context, config)
-                        previewKey++
+                        updateConfig(newConfig)
                     }
                     showDatePicker = false
                 }) {
@@ -489,6 +546,128 @@ fun DotToHomeDashboard() {
         ) {
             DatePicker(state = datePickerState)
         }
+    }
+}
+
+// ── Glass Slider Component ────────────────────────────────────────────────────
+
+@Composable
+fun GlassSlider(
+    value: Float,
+    onValueChange: (Float) -> Unit,
+    backdrop: Backdrop,
+    modifier: Modifier = Modifier
+) {
+    BoxWithConstraints(
+        modifier = modifier
+            .fillMaxWidth()
+            .height(32.dp)
+            .pointerInput(Unit) {
+                detectTapGestures { offset ->
+                    val newVal = (offset.x / size.width.toFloat()).coerceIn(0f, 1f)
+                    onValueChange(newVal)
+                }
+            }
+            .pointerInput(Unit) {
+                detectHorizontalDragGestures { change, _ ->
+                    val newVal = (change.position.x / size.width.toFloat()).coerceIn(0f, 1f)
+                    onValueChange(newVal)
+                }
+            }
+    ) {
+        val width = maxWidth
+        val thumbRadius = 16.dp
+        val availableWidth = width - thumbRadius * 2
+        val thumbOffset = availableWidth * value
+
+        // Track
+        Box(
+            modifier = Modifier
+                .align(Alignment.Center)
+                .fillMaxWidth()
+                .height(10.dp)
+                .drawBackdrop(
+                    backdrop = backdrop,
+                    shape = { Capsule() },
+                    effects = {
+                        blur(radius = 6f.dp.toPx())
+                        lens(
+                            refractionHeight = 2f.dp.toPx(),
+                            refractionAmount = 4f.dp.toPx(),
+                            chromaticAberration = false
+                        )
+                    },
+                    highlight = {
+                        Highlight(
+                            style = HighlightStyle.Default(
+                                color = Color.White.copy(alpha = 0.4f),
+                                angle = -45f
+                            ),
+                            width = 1.dp,
+                            blurRadius = 0.5.dp
+                        )
+                    },
+                    shadow = {
+                        Shadow(
+                            color = Color.Black.copy(alpha = 0.05f),
+                            radius = 2.dp,
+                            offset = DpOffset(0.dp, 1.dp)
+                        )
+                    },
+                    onDrawSurface = {
+                        drawRect(Color.White.copy(alpha = 0.5f))
+                    }
+                )
+        ) {
+            // Fill progress
+            Box(
+                modifier = Modifier
+                    .fillMaxHeight()
+                    .width(thumbOffset + thumbRadius)
+                    .clip(Capsule())
+                    .background(Color(0xFF1A1A1A).copy(alpha = 0.15f))
+            )
+        }
+
+        // Thumb
+        Box(
+            modifier = Modifier
+                .align(Alignment.CenterStart)
+                .offset(x = thumbOffset)
+                .size(thumbRadius * 2)
+                .drawBackdrop(
+                    backdrop = backdrop,
+                    shape = { CircleShape },
+                    effects = {
+                        blur(radius = 8f.dp.toPx())
+                        lens(
+                            refractionHeight = 4f.dp.toPx(),
+                            refractionAmount = 8f.dp.toPx(),
+                            chromaticAberration = false
+                        )
+                    },
+                    highlight = {
+                        Highlight(
+                            style = HighlightStyle.Default(
+                                color = Color.White.copy(alpha = 0.8f),
+                                angle = -45f
+                            ),
+                            width = 1.dp,
+                            blurRadius = 0.5.dp
+                        )
+                    },
+                    shadow = {
+                        Shadow(
+                            color = Color.Black.copy(alpha = 0.15f),
+                            radius = 4.dp,
+                            offset = DpOffset(0.dp, 2.dp)
+                        )
+                    },
+                    onDrawSurface = {
+                        drawRect(Color(0xFF1A1A1A).copy(alpha = 0.9f))
+                    }
+                )
+        )
     }
 }
 
@@ -634,7 +813,7 @@ fun WallpaperPreviewSection(
                     ) {
                         Column {
                             PretendardText(
-                                text = "디데이 진행률",
+                                text = config.customLabel,
                                 fontSize = 9,
                                 color = Color(0xFF999999),
                                 fontWeight = FontWeight.Medium
@@ -667,7 +846,7 @@ fun WallpaperPreviewSection(
 
     // Position slider
     GlassCard(backdrop = backdrop) {
-        Column(verticalArrangement = Arrangement.spacedBy(8.dp)) {
+        Column(verticalArrangement = Arrangement.spacedBy(16.dp)) {
             Row(
                 modifier = Modifier.fillMaxWidth(),
                 horizontalArrangement = Arrangement.SpaceBetween
@@ -675,15 +854,10 @@ fun WallpaperPreviewSection(
                 PretendardText("도트 위치 조절", fontSize = 13, color = Color(0xFF1A1A1A), fontWeight = FontWeight.Medium)
                 PretendardText("${(dotOffsetY * 100).toInt()}%", fontSize = 13, color = Color(0xFF999999), fontWeight = FontWeight.Bold)
             }
-            Slider(
+            GlassSlider(
                 value = dotOffsetY,
                 onValueChange = onDotOffsetYChange,
-                valueRange = 0f..1f,
-                colors = SliderDefaults.colors(
-                    activeTrackColor = Color(0xFF1A1A1A),
-                    inactiveTrackColor = Color(0xFFE0E0E0),
-                    thumbColor = Color(0xFF1A1A1A)
-                )
+                backdrop = backdrop
             )
         }
     }
@@ -818,82 +992,6 @@ fun GlassCard(
             .padding(16.dp),
         content = content
     )
-}
-
-// ── Monochrome Liquid Glass Button ────────────────────────────────────────────
-
-@Composable
-fun MonoLiquidButton(
-    text: String,
-    backdrop: Backdrop,
-    enabled: Boolean = true,
-    onClick: () -> Unit,
-    modifier: Modifier = Modifier
-) {
-    val coroutineScope = rememberCoroutineScope()
-    val pressScale = remember { Animatable(1f) }
-
-    Box(
-        contentAlignment = Alignment.Center,
-        modifier = modifier
-            .fillMaxWidth()
-            .drawBackdrop(
-                backdrop = backdrop,
-                shape = { Capsule() },
-                effects = {
-                    blur(radius = 8f.dp.toPx())
-                    lens(
-                        refractionHeight = 5f.dp.toPx(),
-                        refractionAmount = 10f.dp.toPx(),
-                        chromaticAberration = false
-                    )
-                },
-                layerBlock = {
-                    scaleX = pressScale.value
-                    scaleY = pressScale.value
-                },
-                highlight = {
-                    Highlight(
-                        style = HighlightStyle.Default(
-                            color = Color.White.copy(alpha = 0.6f),
-                            angle = -45f
-                        ),
-                        width = 1.dp,
-                        blurRadius = 0.5.dp
-                    )
-                },
-                shadow = {
-                    Shadow(
-                        color = Color.Black.copy(alpha = 0.1f),
-                        radius = 6.dp,
-                        offset = DpOffset(0.dp, 3.dp)
-                    )
-                },
-                onDrawSurface = {
-                    drawRect(Color(0xFF1A1A1A).copy(alpha = if (enabled) 0.9f else 0.4f))
-                }
-            )
-            .clickable(
-                enabled = enabled,
-                interactionSource = remember { MutableInteractionSource() },
-                indication = null,
-                onClick = {
-                    coroutineScope.launch {
-                        pressScale.animateTo(0.95f, spring(dampingRatio = 0.35f, stiffness = 500f))
-                        pressScale.animateTo(1.0f, spring(dampingRatio = 0.5f, stiffness = 300f))
-                        onClick()
-                    }
-                }
-            )
-            .padding(vertical = 16.dp)
-    ) {
-        PretendardText(
-            text = text,
-            fontSize = 15,
-            color = if (enabled) Color.White else Color.White.copy(alpha = 0.4f),
-            fontWeight = FontWeight.Bold
-        )
-    }
 }
 
 // ── Helpers ───────────────────────────────────────────────────────────────────
