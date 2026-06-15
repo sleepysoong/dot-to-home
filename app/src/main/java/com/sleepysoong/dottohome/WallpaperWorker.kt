@@ -21,27 +21,31 @@ class WallpaperWorker(
 
     override suspend fun doWork(): Result = withContext(Dispatchers.IO) {
         try {
-            Log.d("WallpaperWorker", "Starting wallpaper background task...")
-            
+            Log.d("WallpaperWorker", "배경화면 자동 업데이트 시작...")
+
             val metrics = applicationContext.resources.displayMetrics
             val width = metrics.widthPixels
             val height = metrics.heightPixels
-            
-            // Render the wallpaper bitmap
-            val bitmap = WallpaperGenerator.generate(applicationContext, width, height)
-            
-            // Set system and lock screen wallpapers
+
             val wm = WallpaperManager.getInstance(applicationContext)
+
+            // Generate and set lock screen wallpaper
+            val lockBitmap = WallpaperGenerator.generate(applicationContext, width, height, isLockScreen = true)
+            // Generate and set home screen wallpaper
+            val homeBitmap = WallpaperGenerator.generate(applicationContext, width, height, isLockScreen = false)
+
             if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.N) {
-                wm.setBitmap(bitmap, null, true, WallpaperManager.FLAG_SYSTEM or WallpaperManager.FLAG_LOCK)
+                wm.setBitmap(lockBitmap, null, true, WallpaperManager.FLAG_LOCK)
+                wm.setBitmap(homeBitmap, null, true, WallpaperManager.FLAG_SYSTEM)
             } else {
-                wm.setBitmap(bitmap)
+                // Pre-N, can only set one wallpaper
+                wm.setBitmap(homeBitmap)
             }
-            
-            Log.d("WallpaperWorker", "Wallpaper updated successfully!")
+
+            Log.d("WallpaperWorker", "배경화면 업데이트 완료!")
             Result.success()
         } catch (e: Exception) {
-            Log.e("WallpaperWorker", "Error updating wallpaper in background", e)
+            Log.e("WallpaperWorker", "배경화면 업데이트 실패", e)
             Result.retry()
         }
     }
@@ -50,28 +54,27 @@ class WallpaperWorker(
         private const val WORK_NAME = "DailyWallpaperUpdateWork"
 
         fun scheduleDailyUpdate(context: Context) {
-            Log.d("WallpaperWorker", "Scheduling unique daily wallpaper worker...")
-            
-            // Run daily (once every 24 hours)
+            Log.d("WallpaperWorker", "일일 배경화면 업데이트 예약...")
+
             val workRequest = PeriodicWorkRequestBuilder<WallpaperWorker>(
                 24, TimeUnit.HOURS
             )
-            .setConstraints(
-                Constraints.Builder()
-                    .setRequiresBatteryNotLow(false)
-                    .build()
-            )
-            .build()
+                .setConstraints(
+                    Constraints.Builder()
+                        .setRequiresBatteryNotLow(false)
+                        .build()
+                )
+                .build()
 
             WorkManager.getInstance(context).enqueueUniquePeriodicWork(
                 WORK_NAME,
-                ExistingPeriodicWorkPolicy.UPDATE, // Update config if changed
+                ExistingPeriodicWorkPolicy.UPDATE,
                 workRequest
             )
         }
 
         fun cancelDailyUpdate(context: Context) {
-            Log.d("WallpaperWorker", "Cancelling background wallpaper worker...")
+            Log.d("WallpaperWorker", "일일 배경화면 업데이트 취소...")
             WorkManager.getInstance(context).cancelUniqueWork(WORK_NAME)
         }
     }

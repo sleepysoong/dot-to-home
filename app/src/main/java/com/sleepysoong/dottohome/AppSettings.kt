@@ -1,25 +1,44 @@
 package com.sleepysoong.dottohome
 
 import android.content.Context
-import android.graphics.Color
 import com.google.gson.Gson
 import java.util.Calendar
+import java.util.TimeZone
 
 data class AppConfig(
-    val startDate: Long = System.currentTimeMillis(),
-    val targetDate: Long = System.currentTimeMillis() + 30L * 24 * 60 * 60 * 1000, // Default 30 days
-    val useCustomImage: Boolean = false,
-    val dotColor: Int = Color.parseColor("#00FFCC"), // Default Neon Teal
-    val dotShape: String = "circle", // "circle" or "square"
-    val autoUpdate: Boolean = false,
-    val refractionHeight: Float = 10f,
-    val refractionAmount: Float = 20f,
-    val chromaticAberration: Boolean = true
-)
+    // Target D-Day date (start date is always "today" in KST)
+    val targetDate: Long = getDefaultTargetDate(),
+
+    // Lock screen settings
+    val lockUseCustomImage: Boolean = false,
+    val lockDotOffsetX: Float = 0.5f,  // 0..1 percentage from left
+    val lockDotOffsetY: Float = 0.55f, // 0..1 percentage from top
+
+    // Home screen settings
+    val homeUseCustomImage: Boolean = false,
+    val homeDotOffsetX: Float = 0.5f,
+    val homeDotOffsetY: Float = 0.55f,
+
+    // Auto update
+    val autoUpdate: Boolean = false
+) {
+    companion object {
+        fun getDefaultTargetDate(): Long {
+            val kst = TimeZone.getTimeZone("Asia/Seoul")
+            val cal = Calendar.getInstance(kst)
+            cal.add(Calendar.DAY_OF_YEAR, 30)
+            cal.set(Calendar.HOUR_OF_DAY, 0)
+            cal.set(Calendar.MINUTE, 0)
+            cal.set(Calendar.SECOND, 0)
+            cal.set(Calendar.MILLISECOND, 0)
+            return cal.timeInMillis
+        }
+    }
+}
 
 object AppSettings {
     private const val PREFS_NAME = "dot_to_home_prefs"
-    private const val KEY_CONFIG = "app_config"
+    private const val KEY_CONFIG = "app_config_v2"
     private val gson = Gson()
 
     fun getConfig(context: Context): AppConfig {
@@ -36,5 +55,16 @@ object AppSettings {
         val prefs = context.getSharedPreferences(PREFS_NAME, Context.MODE_PRIVATE)
         val json = gson.toJson(config)
         prefs.edit().putString(KEY_CONFIG, json).apply()
+    }
+
+    /** Returns "today" at 00:00 in KST */
+    fun getTodayKST(): Long {
+        val kst = TimeZone.getTimeZone("Asia/Seoul")
+        val cal = Calendar.getInstance(kst)
+        cal.set(Calendar.HOUR_OF_DAY, 0)
+        cal.set(Calendar.MINUTE, 0)
+        cal.set(Calendar.SECOND, 0)
+        cal.set(Calendar.MILLISECOND, 0)
+        return cal.timeInMillis
     }
 }
