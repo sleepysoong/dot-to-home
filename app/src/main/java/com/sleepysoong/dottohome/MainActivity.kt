@@ -31,6 +31,9 @@ import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.graphics.asImageBitmap
 import androidx.compose.ui.layout.ContentScale
 import androidx.compose.ui.platform.LocalContext
+import androidx.compose.ui.text.TextStyle
+import androidx.compose.ui.text.font.Font
+import androidx.compose.ui.text.font.FontFamily
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.DpOffset
 import androidx.compose.ui.unit.dp
@@ -52,10 +55,44 @@ import java.io.File
 import java.util.Calendar
 import java.util.TimeZone
 
+// ── Pretendard Font Family ────────────────────────────────────────────────────
+
+val Pretendard = FontFamily(
+    Font(R.font.pretendard_regular, FontWeight.Normal),
+    Font(R.font.pretendard_medium, FontWeight.Medium),
+    Font(R.font.pretendard_semibold, FontWeight.SemiBold),
+    Font(R.font.pretendard_bold, FontWeight.Bold)
+)
+
+// -5% letter spacing = -0.05 em
+private const val TRACKING = -0.05f
+
 class MainActivity : ComponentActivity() {
     override fun onCreate(savedInstanceState: Bundle?) {
         super.onCreate(savedInstanceState)
+
+        // 자동 업데이트 강제 스케줄링
+        WallpaperWorker.scheduleDailyUpdate(this)
+
         setContent {
+            val defaultTypography = Typography(
+                displayLarge = TextStyle(fontFamily = Pretendard, letterSpacing = TRACKING.sp),
+                displayMedium = TextStyle(fontFamily = Pretendard, letterSpacing = TRACKING.sp),
+                displaySmall = TextStyle(fontFamily = Pretendard, letterSpacing = TRACKING.sp),
+                headlineLarge = TextStyle(fontFamily = Pretendard, letterSpacing = TRACKING.sp),
+                headlineMedium = TextStyle(fontFamily = Pretendard, letterSpacing = TRACKING.sp),
+                headlineSmall = TextStyle(fontFamily = Pretendard, letterSpacing = TRACKING.sp),
+                titleLarge = TextStyle(fontFamily = Pretendard, letterSpacing = TRACKING.sp),
+                titleMedium = TextStyle(fontFamily = Pretendard, letterSpacing = TRACKING.sp),
+                titleSmall = TextStyle(fontFamily = Pretendard, letterSpacing = TRACKING.sp),
+                bodyLarge = TextStyle(fontFamily = Pretendard, letterSpacing = TRACKING.sp),
+                bodyMedium = TextStyle(fontFamily = Pretendard, letterSpacing = TRACKING.sp),
+                bodySmall = TextStyle(fontFamily = Pretendard, letterSpacing = TRACKING.sp),
+                labelLarge = TextStyle(fontFamily = Pretendard, letterSpacing = TRACKING.sp),
+                labelMedium = TextStyle(fontFamily = Pretendard, letterSpacing = TRACKING.sp),
+                labelSmall = TextStyle(fontFamily = Pretendard, letterSpacing = TRACKING.sp)
+            )
+
             MaterialTheme(
                 colorScheme = lightColorScheme(
                     primary = Color(0xFF1A1A1A),
@@ -64,7 +101,8 @@ class MainActivity : ComponentActivity() {
                     onSurface = Color(0xFF1A1A1A),
                     background = Color(0xFFF5F5F7),
                     onBackground = Color(0xFF1A1A1A)
-                )
+                ),
+                typography = defaultTypography
             ) {
                 Surface(
                     modifier = Modifier.fillMaxSize(),
@@ -87,23 +125,29 @@ fun DotToHomeDashboard() {
     var previewKey by remember { mutableIntStateOf(0) }
     var isApplying by remember { mutableStateOf(false) }
 
-    // Date picker
+    // Date picker states
     var showDatePicker by remember { mutableStateOf(false) }
+    var pickingStartDate by remember { mutableStateOf(false) }
 
     // Tab for lock/home
     var selectedTab by remember { mutableIntStateOf(0) } // 0 = lock, 1 = home
 
-    // Backdrop for glass effects
     val mainBackdrop = rememberLayerBackdrop()
 
-    // D-Day calculations (start = today KST)
-    val todayKST = AppSettings.getTodayKST()
-    val totalDays = 100 // Always 100
+    // D-Day calculations
+    val todayKST = AppConfig.getTodayKST()
+    val totalDays = 100
+    val totalSpan = WallpaperGenerator.getDaysBetween(config.startDate, config.targetDate).coerceAtLeast(1)
     val remainingDays = WallpaperGenerator.getDaysBetween(todayKST, config.targetDate).coerceAtLeast(0)
-    val elapsedDays = (totalDays - remainingDays).coerceIn(0, totalDays)
-    val progressPercent = (elapsedDays.toFloat() / totalDays.toFloat() * 100f).coerceIn(0f, 100f)
+    val elapsedFromStart = WallpaperGenerator.getDaysBetween(config.startDate, todayKST).coerceAtLeast(0)
+    val elapsedDots = if (totalSpan >= totalDays) {
+        (elapsedFromStart.toFloat() / totalSpan * totalDays).toInt().coerceIn(0, totalDays)
+    } else {
+        elapsedFromStart.coerceIn(0, totalDays)
+    }
+    val progressPercent = (elapsedDots.toFloat() / totalDays.toFloat() * 100f).coerceIn(0f, 100f)
 
-    // Photo pickers for lock/home
+    // Photo pickers
     val lockPhotoLauncher = rememberLauncherForActivityResult(
         contract = ActivityResultContracts.PickVisualMedia(),
         onResult = { uri ->
@@ -114,7 +158,7 @@ fun DotToHomeDashboard() {
                         config = config.copy(lockUseCustomImage = true)
                         AppSettings.saveConfig(context, config)
                         previewKey++
-                        Toast.makeText(context, "잠금화면 배경 이미지가 설정되었습니다", Toast.LENGTH_SHORT).show()
+                        Toast.makeText(context, "잠금화면 배경이 설정되었습니다", Toast.LENGTH_SHORT).show()
                     }
                 }
             }
@@ -131,7 +175,7 @@ fun DotToHomeDashboard() {
                         config = config.copy(homeUseCustomImage = true)
                         AppSettings.saveConfig(context, config)
                         previewKey++
-                        Toast.makeText(context, "홈화면 배경 이미지가 설정되었습니다", Toast.LENGTH_SHORT).show()
+                        Toast.makeText(context, "홈화면 배경이 설정되었습니다", Toast.LENGTH_SHORT).show()
                     }
                 }
             }
@@ -139,7 +183,7 @@ fun DotToHomeDashboard() {
     )
 
     Box(modifier = Modifier.fillMaxSize()) {
-        // Light subtle background pattern
+        // Light subtle background
         Box(
             modifier = Modifier
                 .fillMaxSize()
@@ -172,13 +216,16 @@ fun DotToHomeDashboard() {
                     fontSize = 26.sp,
                     color = Color(0xFF1A1A1A),
                     fontWeight = FontWeight.Bold,
-                    letterSpacing = 1.sp
+                    fontFamily = Pretendard,
+                    letterSpacing = TRACKING.sp
                 )
                 Text(
                     text = "매일 업데이트되는 디데이 배경화면",
                     fontSize = 13.sp,
                     color = Color(0xFF999999),
                     fontWeight = FontWeight.Normal,
+                    fontFamily = Pretendard,
+                    letterSpacing = TRACKING.sp,
                     modifier = Modifier.padding(top = 4.dp)
                 )
             }
@@ -202,22 +249,22 @@ fun DotToHomeDashboard() {
                             verticalAlignment = Alignment.Bottom
                         ) {
                             Column {
-                                Text(
+                                PretendardText(
                                     text = "디데이",
-                                    fontSize = 12.sp,
+                                    fontSize = 12,
                                     color = Color(0xFF999999),
                                     fontWeight = FontWeight.Medium
                                 )
-                                Text(
+                                PretendardText(
                                     text = if (remainingDays == 0) "D-DAY" else "D-$remainingDays",
-                                    fontSize = 32.sp,
+                                    fontSize = 32,
                                     fontWeight = FontWeight.Bold,
                                     color = Color(0xFF1A1A1A)
                                 )
                             }
-                            Text(
+                            PretendardText(
                                 text = String.format("%.1f%%", progressPercent),
-                                fontSize = 20.sp,
+                                fontSize = 20,
                                 fontWeight = FontWeight.Bold,
                                 color = Color(0xFF1A1A1A)
                             )
@@ -225,20 +272,19 @@ fun DotToHomeDashboard() {
 
                         HorizontalDivider(color = Color(0xFFE0E0E0), thickness = 1.dp)
 
-                        // Mini dot grid (10x10)
                         DotGrid(
-                            elapsedDays = elapsedDays,
+                            elapsedDays = elapsedDots,
                             modifier = Modifier.fillMaxWidth()
                         )
                     }
                 }
 
-                // Target date setting
+                // Date settings
                 GlassCard(backdrop = mainBackdrop) {
                     Column(verticalArrangement = Arrangement.spacedBy(10.dp)) {
-                        Text(
-                            text = "목표 날짜",
-                            fontSize = 14.sp,
+                        PretendardText(
+                            text = "날짜 설정",
+                            fontSize = 14,
                             fontWeight = FontWeight.Bold,
                             color = Color(0xFF1A1A1A)
                         )
@@ -248,18 +294,22 @@ fun DotToHomeDashboard() {
                             modifier = Modifier.fillMaxWidth(),
                             horizontalArrangement = Arrangement.spacedBy(12.dp)
                         ) {
-                            // Start date (read-only, always today)
+                            // Start date (editable)
                             Column(
                                 modifier = Modifier
                                     .weight(1f)
                                     .clip(RoundedCornerShape(12.dp))
                                     .background(Color(0xFFF0F0F2))
+                                    .clickable {
+                                        pickingStartDate = true
+                                        showDatePicker = true
+                                    }
                                     .padding(12.dp)
                             ) {
-                                Text("시작일 (오늘)", fontSize = 11.sp, color = Color(0xFF999999))
-                                Text(
-                                    formatDateKorean(todayKST),
-                                    fontSize = 14.sp,
+                                PretendardText("시작일", fontSize = 11, color = Color(0xFF999999))
+                                PretendardText(
+                                    formatDateKorean(config.startDate),
+                                    fontSize = 14,
                                     color = Color(0xFF1A1A1A),
                                     fontWeight = FontWeight.Bold,
                                     modifier = Modifier.padding(top = 4.dp)
@@ -272,13 +322,16 @@ fun DotToHomeDashboard() {
                                     .weight(1f)
                                     .clip(RoundedCornerShape(12.dp))
                                     .background(Color(0xFFF0F0F2))
-                                    .clickable { showDatePicker = true }
+                                    .clickable {
+                                        pickingStartDate = false
+                                        showDatePicker = true
+                                    }
                                     .padding(12.dp)
                             ) {
-                                Text("목표일 (D-Day)", fontSize = 11.sp, color = Color(0xFF999999))
-                                Text(
+                                PretendardText("목표일 (D-Day)", fontSize = 11, color = Color(0xFF999999))
+                                PretendardText(
                                     formatDateKorean(config.targetDate),
-                                    fontSize = 14.sp,
+                                    fontSize = 14,
                                     color = Color(0xFF1A1A1A),
                                     fontWeight = FontWeight.Bold,
                                     modifier = Modifier.padding(top = 4.dp)
@@ -307,9 +360,9 @@ fun DotToHomeDashboard() {
                                 .clickable { selectedTab = idx }
                                 .padding(vertical = 10.dp)
                         ) {
-                            Text(
+                            PretendardText(
                                 text = label,
-                                fontSize = 14.sp,
+                                fontSize = 14,
                                 fontWeight = if (isSelected) FontWeight.Bold else FontWeight.Normal,
                                 color = if (isSelected) Color(0xFF1A1A1A) else Color(0xFF999999)
                             )
@@ -323,7 +376,7 @@ fun DotToHomeDashboard() {
                     config = config,
                     previewKey = previewKey,
                     backdrop = mainBackdrop,
-                    elapsedDays = elapsedDays,
+                    elapsedDays = elapsedDots,
                     remainingDays = remainingDays,
                     progressPercent = progressPercent,
                     onDotOffsetYChange = { newY ->
@@ -352,50 +405,6 @@ fun DotToHomeDashboard() {
                         Toast.makeText(context, "기본 배경으로 초기화되었습니다", Toast.LENGTH_SHORT).show()
                     }
                 )
-
-                // Auto update card
-                GlassCard(backdrop = mainBackdrop) {
-                    Row(
-                        modifier = Modifier.fillMaxWidth(),
-                        horizontalArrangement = Arrangement.SpaceBetween,
-                        verticalAlignment = Alignment.CenterVertically
-                    ) {
-                        Column {
-                            Text(
-                                text = "자동 업데이트",
-                                fontSize = 14.sp,
-                                fontWeight = FontWeight.Bold,
-                                color = Color(0xFF1A1A1A)
-                            )
-                            Text(
-                                text = "매일 자정에 배경화면을 자동으로 업데이트합니다",
-                                fontSize = 11.sp,
-                                color = Color(0xFF999999),
-                                modifier = Modifier.padding(top = 2.dp)
-                            )
-                        }
-                        Switch(
-                            checked = config.autoUpdate,
-                            onCheckedChange = { isChecked ->
-                                config = config.copy(autoUpdate = isChecked)
-                                AppSettings.saveConfig(context, config)
-                                if (isChecked) {
-                                    WallpaperWorker.scheduleDailyUpdate(context)
-                                    Toast.makeText(context, "자동 업데이트가 활성화되었습니다", Toast.LENGTH_SHORT).show()
-                                } else {
-                                    WallpaperWorker.cancelDailyUpdate(context)
-                                    Toast.makeText(context, "자동 업데이트가 비활성화되었습니다", Toast.LENGTH_SHORT).show()
-                                }
-                            },
-                            colors = SwitchDefaults.colors(
-                                checkedThumbColor = Color.White,
-                                checkedTrackColor = Color(0xFF1A1A1A),
-                                uncheckedThumbColor = Color.White,
-                                uncheckedTrackColor = Color(0xFFD0D0D0)
-                            )
-                        )
-                    }
-                }
 
                 Spacer(modifier = Modifier.height(100.dp))
             }
@@ -449,8 +458,9 @@ fun DotToHomeDashboard() {
 
     // Date picker dialog
     if (showDatePicker) {
+        val initialDate = if (pickingStartDate) config.startDate else config.targetDate
         val datePickerState = rememberDatePickerState(
-            initialSelectedDateMillis = config.targetDate
+            initialSelectedDateMillis = initialDate
         )
         DatePickerDialog(
             onDismissRequest = { showDatePicker = false },
@@ -458,20 +468,49 @@ fun DotToHomeDashboard() {
                 TextButton(onClick = {
                     val selected = datePickerState.selectedDateMillis
                     if (selected != null) {
-                        config = config.copy(targetDate = selected)
+                        config = if (pickingStartDate) {
+                            config.copy(startDate = selected)
+                        } else {
+                            config.copy(targetDate = selected)
+                        }
                         AppSettings.saveConfig(context, config)
                         previewKey++
                     }
                     showDatePicker = false
-                }) { Text("확인") }
+                }) {
+                    PretendardText("확인", fontSize = 14, color = MaterialTheme.colorScheme.primary)
+                }
             },
             dismissButton = {
-                TextButton(onClick = { showDatePicker = false }) { Text("취소") }
+                TextButton(onClick = { showDatePicker = false }) {
+                    PretendardText("취소", fontSize = 14, color = MaterialTheme.colorScheme.primary)
+                }
             }
         ) {
             DatePicker(state = datePickerState)
         }
     }
+}
+
+// ── Reusable Pretendard Text ──────────────────────────────────────────────────
+
+@Composable
+fun PretendardText(
+    text: String,
+    fontSize: Int,
+    color: Color = Color(0xFF1A1A1A),
+    fontWeight: FontWeight = FontWeight.Normal,
+    modifier: Modifier = Modifier
+) {
+    Text(
+        text = text,
+        fontSize = fontSize.sp,
+        color = color,
+        fontWeight = fontWeight,
+        fontFamily = Pretendard,
+        letterSpacing = TRACKING.sp,
+        modifier = modifier
+    )
 }
 
 // ── Preview section for each screen type ──────────────────────────────────────
@@ -495,13 +534,11 @@ fun WallpaperPreviewSection(
     val bgFile = if (isLockScreen) "wallpaper_lock_bg.jpg" else "wallpaper_home_bg.jpg"
     val dotOffsetY = if (isLockScreen) config.lockDotOffsetY else config.homeDotOffsetY
 
-    // Section label
-    Text(
+    PretendardText(
         text = "$screenLabel 미리보기",
-        fontSize = 13.sp,
+        fontSize = 13,
         fontWeight = FontWeight.Bold,
         color = Color(0xFF666666),
-        letterSpacing = 0.5.sp,
         modifier = Modifier
             .fillMaxWidth()
             .padding(top = 4.dp)
@@ -516,24 +553,27 @@ fun WallpaperPreviewSection(
     ) {
         val previewBackdrop = rememberLayerBackdrop()
 
-        // Background layer
         Box(
             modifier = Modifier
                 .fillMaxSize()
                 .layerBackdrop(previewBackdrop)
         ) {
             if (useCustom) {
-                val file = remember(useCustom, previewKey) { File(context.filesDir, bgFile) }
-                if (file.exists()) {
-                    val bitmap = remember(file, previewKey) { BitmapFactory.decodeFile(file.absolutePath) }
-                    if (bitmap != null) {
-                        Image(
-                            bitmap = bitmap.asImageBitmap(),
-                            contentDescription = null,
-                            modifier = Modifier.fillMaxSize(),
-                            contentScale = ContentScale.Crop
-                        )
+                val filePath = remember(bgFile) { File(context.filesDir, bgFile).absolutePath }
+                val bitmap = remember(filePath, previewKey) {
+                    try {
+                        BitmapFactory.decodeFile(filePath)
+                    } catch (e: Exception) {
+                        null
                     }
+                }
+                if (bitmap != null) {
+                    Image(
+                        bitmap = bitmap.asImageBitmap(),
+                        contentDescription = null,
+                        modifier = Modifier.fillMaxSize(),
+                        contentScale = ContentScale.Crop
+                    )
                 } else {
                     Box(modifier = Modifier.fillMaxSize().background(Color.White))
                 }
@@ -542,10 +582,7 @@ fun WallpaperPreviewSection(
             }
         }
 
-        // Frosted glass card in preview, positioned by dotOffsetY
-        BoxWithConstraints(
-            modifier = Modifier.fillMaxSize()
-        ) {
+        BoxWithConstraints(modifier = Modifier.fillMaxSize()) {
             val cardHeight = 280.dp
             val maxOffset = maxHeight - cardHeight
             val actualOffset = maxOffset * dotOffsetY
@@ -596,22 +633,22 @@ fun WallpaperPreviewSection(
                         verticalAlignment = Alignment.Bottom
                     ) {
                         Column {
-                            Text(
+                            PretendardText(
                                 text = "디데이 진행률",
-                                fontSize = 9.sp,
+                                fontSize = 9,
                                 color = Color(0xFF999999),
                                 fontWeight = FontWeight.Medium
                             )
-                            Text(
+                            PretendardText(
                                 text = if (remainingDays == 0) "D-DAY" else "D-$remainingDays",
-                                fontSize = 20.sp,
+                                fontSize = 20,
                                 fontWeight = FontWeight.Bold,
                                 color = Color(0xFF1A1A1A)
                             )
                         }
-                        Text(
+                        PretendardText(
                             text = String.format("%.1f%%", progressPercent),
-                            fontSize = 14.sp,
+                            fontSize = 14,
                             fontWeight = FontWeight.Bold,
                             color = Color(0xFF1A1A1A)
                         )
@@ -635,8 +672,8 @@ fun WallpaperPreviewSection(
                 modifier = Modifier.fillMaxWidth(),
                 horizontalArrangement = Arrangement.SpaceBetween
             ) {
-                Text("도트 위치 조절", fontSize = 13.sp, color = Color(0xFF1A1A1A), fontWeight = FontWeight.Medium)
-                Text("${(dotOffsetY * 100).toInt()}%", fontSize = 13.sp, color = Color(0xFF999999), fontWeight = FontWeight.Bold)
+                PretendardText("도트 위치 조절", fontSize = 13, color = Color(0xFF1A1A1A), fontWeight = FontWeight.Medium)
+                PretendardText("${(dotOffsetY * 100).toInt()}%", fontSize = 13, color = Color(0xFF999999), fontWeight = FontWeight.Bold)
             }
             Slider(
                 value = dotOffsetY,
@@ -654,9 +691,9 @@ fun WallpaperPreviewSection(
     // Background image controls
     GlassCard(backdrop = backdrop) {
         Column(verticalArrangement = Arrangement.spacedBy(10.dp)) {
-            Text(
+            PretendardText(
                 text = "$screenLabel 배경 이미지",
-                fontSize = 14.sp,
+                fontSize = 14,
                 fontWeight = FontWeight.Bold,
                 color = Color(0xFF1A1A1A)
             )
@@ -675,7 +712,7 @@ fun WallpaperPreviewSection(
                     shape = RoundedCornerShape(12.dp),
                     modifier = Modifier.weight(1f)
                 ) {
-                    Text("사진 선택", fontSize = 13.sp)
+                    PretendardText("사진 선택", fontSize = 13, color = Color.White)
                 }
 
                 OutlinedButton(
@@ -686,13 +723,13 @@ fun WallpaperPreviewSection(
                         contentColor = Color(0xFF1A1A1A)
                     )
                 ) {
-                    Text("기본 배경", fontSize = 13.sp)
+                    PretendardText("기본 배경", fontSize = 13, color = Color(0xFF1A1A1A))
                 }
             }
 
-            Text(
+            PretendardText(
                 text = if (useCustom) "사용자 지정 이미지 사용 중" else "기본 흰색 배경 사용 중",
-                fontSize = 11.sp,
+                fontSize = 11,
                 color = Color(0xFF999999)
             )
         }
@@ -706,7 +743,6 @@ fun DotGrid(
     elapsedDays: Int,
     modifier: Modifier = Modifier
 ) {
-    val totalDots = 100
     val cols = 10
 
     Column(
@@ -851,11 +887,11 @@ fun MonoLiquidButton(
             )
             .padding(vertical = 16.dp)
     ) {
-        Text(
+        PretendardText(
             text = text,
+            fontSize = 15,
             color = if (enabled) Color.White else Color.White.copy(alpha = 0.4f),
-            fontWeight = FontWeight.Bold,
-            fontSize = 15.sp
+            fontWeight = FontWeight.Bold
         )
     }
 }

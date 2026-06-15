@@ -8,6 +8,31 @@ import java.util.TimeZone
 
 object WallpaperGenerator {
 
+    private var cachedTypeface: Typeface? = null
+    private var cachedBoldTypeface: Typeface? = null
+
+    private fun getPretendardRegular(context: Context): Typeface {
+        if (cachedTypeface == null) {
+            cachedTypeface = try {
+                context.resources.getFont(R.font.pretendard_regular)
+            } catch (e: Exception) {
+                Typeface.DEFAULT
+            }
+        }
+        return cachedTypeface!!
+    }
+
+    private fun getPretendardBold(context: Context): Typeface {
+        if (cachedBoldTypeface == null) {
+            cachedBoldTypeface = try {
+                context.resources.getFont(R.font.pretendard_bold)
+            } catch (e: Exception) {
+                Typeface.create(Typeface.DEFAULT, Typeface.BOLD)
+            }
+        }
+        return cachedBoldTypeface!!
+    }
+
     // Always uses KST timezone for day calculations
     fun getDaysBetween(start: Long, end: Long): Int {
         val kst = TimeZone.getTimeZone("Asia/Seoul")
@@ -67,19 +92,24 @@ object WallpaperGenerator {
         if (bgBitmap != null) {
             canvas.drawBitmap(bgBitmap, 0f, 0f, null)
         } else {
-            // Clean white background
             canvas.drawColor(Color.WHITE)
         }
 
-        // 2. Calculate D-Day info (start = today KST)
-        val todayKST = AppSettings.getTodayKST()
+        // 2. Calculate D-Day info
         val totalDays = 100 // Always 100 dots (10x10)
+        val todayKST = AppConfig.getTodayKST()
         val remainingDays = getDaysBetween(todayKST, config.targetDate).coerceAtLeast(0)
-        val elapsedDays = (totalDays - remainingDays).coerceIn(0, totalDays)
-        val progressPercent = (elapsedDays.toFloat() / totalDays.toFloat() * 100f).coerceIn(0f, 100f)
+        val totalSpan = getDaysBetween(config.startDate, config.targetDate).coerceAtLeast(1)
+        val elapsedFromStart = getDaysBetween(config.startDate, todayKST).coerceAtLeast(0)
+        // Map elapsed into 100-dot scale
+        val elapsedDots = if (totalSpan >= totalDays) {
+            (elapsedFromStart.toFloat() / totalSpan * totalDays).toInt().coerceIn(0, totalDays)
+        } else {
+            elapsedFromStart.coerceIn(0, totalDays)
+        }
+        val progressPercent = (elapsedDots.toFloat() / totalDays.toFloat() * 100f).coerceIn(0f, 100f)
 
         // 3. Dot position from config
-        val dotOffsetX = if (isLockScreen) config.lockDotOffsetX else config.homeDotOffsetX
         val dotOffsetY = if (isLockScreen) config.lockDotOffsetY else config.homeDotOffsetY
 
         // 4. Card dimensions
@@ -96,7 +126,6 @@ object WallpaperGenerator {
         val cardPadding = 50f
         val cardHeight = (cardHeaderHeight + gridHeight + cardPadding * 2).toInt()
 
-        // Position card based on user-configurable offset
         val cardLeft = (width - cardWidth) / 2f
         val maxCardTop = (height - cardHeight).toFloat().coerceAtLeast(0f)
         val cardTop = (dotOffsetY * maxCardTop).coerceIn(0f, maxCardTop)
@@ -144,12 +173,11 @@ object WallpaperGenerator {
         val cardPaint = Paint().apply {
             isAntiAlias = true
             color = Color.WHITE
-            alpha = 180 // Semi-transparent white glass
+            alpha = 180
             style = Paint.Style.FILL
         }
         canvas.drawRoundRect(cardRect, cornerRadius, cornerRadius, cardPaint)
 
-        // Card border - subtle grey stroke
         val borderPaint = Paint().apply {
             isAntiAlias = true
             style = Paint.Style.STROKE
@@ -158,32 +186,36 @@ object WallpaperGenerator {
         }
         canvas.drawRoundRect(cardRect, cornerRadius, cornerRadius, borderPaint)
 
-        // 7. Draw D-Day text
+        // 7. Draw D-Day text with Pretendard font and -5% letter spacing
         val textColor = Color.parseColor("#1A1A1A")
         val subTextColor = Color.parseColor("#888888")
 
+        // letterSpacing = -0.05 em (fontSize * -0.05)
         val labelPaint = Paint().apply {
             isAntiAlias = true
             color = subTextColor
             textSize = 30f
-            typeface = Typeface.create(Typeface.DEFAULT, Typeface.NORMAL)
+            typeface = getPretendardRegular(context)
             textAlign = Paint.Align.LEFT
+            letterSpacing = -0.05f
         }
 
         val ddayPaint = Paint().apply {
             isAntiAlias = true
             color = textColor
             textSize = 72f
-            typeface = Typeface.create(Typeface.DEFAULT, Typeface.BOLD)
+            typeface = getPretendardBold(context)
             textAlign = Paint.Align.LEFT
+            letterSpacing = -0.05f
         }
 
         val percentPaint = Paint().apply {
             isAntiAlias = true
             color = textColor
             textSize = 44f
-            typeface = Typeface.create(Typeface.DEFAULT, Typeface.BOLD)
+            typeface = getPretendardBold(context)
             textAlign = Paint.Align.RIGHT
+            letterSpacing = -0.05f
         }
 
         val textY = cardTop + cardPadding + 50f
@@ -222,7 +254,7 @@ object WallpaperGenerator {
             val cIdx = i % cols
             val cx = gridStartX + cIdx * (dotRadius * 2 + dotSpacing)
             val cy = gridStartY + rIdx * (dotRadius * 2 + dotSpacing)
-            val isElapsed = i < elapsedDays
+            val isElapsed = i < elapsedDots
             canvas.drawCircle(cx, cy, dotRadius, if (isElapsed) fillPaint else emptyPaint)
         }
 
@@ -253,7 +285,6 @@ object WallpaperGenerator {
         return scaled
     }
 
-    // Fast O(W*H) Box Blur
     private fun boxBlur(src: Bitmap, radius: Int): Bitmap {
         val w = src.width
         val h = src.height
@@ -262,7 +293,6 @@ object WallpaperGenerator {
         val r = radius.coerceAtLeast(1)
         val temp = IntArray(w * h)
 
-        // Horizontal pass
         for (y in 0 until h) {
             for (x in 0 until w) {
                 var rSum = 0; var gSum = 0; var bSum = 0; var count = 0
@@ -280,7 +310,6 @@ object WallpaperGenerator {
             }
         }
 
-        // Vertical pass
         for (x in 0 until w) {
             for (y in 0 until h) {
                 var rSum = 0; var gSum = 0; var bSum = 0; var count = 0
