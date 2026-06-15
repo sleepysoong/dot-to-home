@@ -6,7 +6,9 @@
 
     <application
         android:allowBackup="true"
-        android:label="도트 투 홈"
+        android:icon="@mipmap/ic_launcher"
+        android:roundIcon="@mipmap/ic_launcher_round"
+        android:label="dot-to-home"
         android:supportsRtl="true"
         android:theme="@android:style/Theme.Material.Light.NoActionBar"
         android:hardwareAccelerated="true">

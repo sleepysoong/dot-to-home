@@ -29,17 +29,23 @@ class WallpaperWorker(
 
             val wm = WallpaperManager.getInstance(applicationContext)
 
-            // Generate and set lock screen wallpaper
-            val lockBitmap = WallpaperGenerator.generate(applicationContext, width, height, isLockScreen = true)
-            // Generate and set home screen wallpaper
-            val homeBitmap = WallpaperGenerator.generate(applicationContext, width, height, isLockScreen = false)
+            val config = AppSettings.getConfig(applicationContext)
 
             if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.N) {
-                wm.setBitmap(lockBitmap, null, true, WallpaperManager.FLAG_LOCK)
-                wm.setBitmap(homeBitmap, null, true, WallpaperManager.FLAG_SYSTEM)
+                if (config.lockEnabled) {
+                    val lockBitmap = WallpaperGenerator.generate(applicationContext, width, height, isLockScreen = true)
+                    wm.setBitmap(lockBitmap, null, true, WallpaperManager.FLAG_LOCK)
+                }
+                if (config.homeEnabled) {
+                    val homeBitmap = WallpaperGenerator.generate(applicationContext, width, height, isLockScreen = false)
+                    wm.setBitmap(homeBitmap, null, true, WallpaperManager.FLAG_SYSTEM)
+                }
             } else {
                 // Pre-N, can only set one wallpaper
-                wm.setBitmap(homeBitmap)
+                if (config.homeEnabled) {
+                    val homeBitmap = WallpaperGenerator.generate(applicationContext, width, height, isLockScreen = false)
+                    wm.setBitmap(homeBitmap)
+                }
             }
 
             Log.d("WallpaperWorker", "배경화면 업데이트 완료!")

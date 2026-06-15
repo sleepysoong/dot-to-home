@@ -96,34 +96,50 @@ object WallpaperGenerator {
         }
 
         // 2. Calculate D-Day info
-        val totalDays = 100 // Always 100 dots (10x10)
         val todayKST = AppConfig.getTodayKST()
-        val remainingDays = getDaysBetween(todayKST, config.targetDate).coerceAtLeast(0)
         val totalSpan = getDaysBetween(config.startDate, config.targetDate).coerceAtLeast(1)
+        val remainingDays = getDaysBetween(todayKST, config.targetDate).coerceAtLeast(0)
         val elapsedFromStart = getDaysBetween(config.startDate, todayKST).coerceAtLeast(0)
-        // Map elapsed into 100-dot scale
-        val elapsedDots = if (totalSpan >= totalDays) {
-            (elapsedFromStart.toFloat() / totalSpan * totalDays).toInt().coerceIn(0, totalDays)
+
+        val (cols, rows, totalDots) = GridCalculator.calculate(config.dotGridType, totalSpan)
+
+        // Map elapsed into totalDots scale
+        val elapsedDots = if (config.dotGridType == DotGridType.AUTO_MATCH_DAYS) {
+            elapsedFromStart.coerceIn(0, totalDots)
         } else {
-            elapsedFromStart.coerceIn(0, totalDays)
+            if (totalSpan >= totalDots) {
+                (elapsedFromStart.toFloat() / totalSpan * totalDots).toInt().coerceIn(0, totalDots)
+            } else {
+                elapsedFromStart.coerceIn(0, totalDots)
+            }
         }
-        val progressPercent = (elapsedDots.toFloat() / totalDays.toFloat() * 100f).coerceIn(0f, 100f)
+        val progressPercent = (elapsedDots.toFloat() / totalDots.toFloat() * 100f).coerceIn(0f, 100f)
 
         // 3. Dot position from config
         val dotOffsetY = if (isLockScreen) config.lockDotOffsetY else config.homeDotOffsetY
 
         // 4. Card dimensions
-        val cardWidth = (width * 0.82f).toInt()
-        val cols = 10
-        val rows = 10
-        val dotSpacing = (cardWidth * 0.025f).coerceIn(6f, 16f)
-        val dotRadius = (cardWidth * 0.018f).coerceIn(4f, 14f)
+        val minCardWidth = (width * 0.6f).toInt()
+        val maxCardWidth = (width * 0.88f).toInt()
 
-        val gridWidth = cols * (dotRadius * 2 + dotSpacing) - dotSpacing
-        val gridHeight = rows * (dotRadius * 2 + dotSpacing) - dotSpacing
+        var dotRadius = 12f
+        var dotSpacing = 16f
 
-        val cardHeaderHeight = 200f
+        var gridWidth = cols * (dotRadius * 2 + dotSpacing) - dotSpacing
+        var gridHeight = rows * (dotRadius * 2 + dotSpacing) - dotSpacing
+
         val cardPadding = 50f
+
+        if (gridWidth + cardPadding * 2 > maxCardWidth) {
+            val scale = (maxCardWidth - cardPadding * 2) / gridWidth
+            dotRadius *= scale
+            dotSpacing *= scale
+            gridWidth = cols * (dotRadius * 2 + dotSpacing) - dotSpacing
+            gridHeight = rows * (dotRadius * 2 + dotSpacing) - dotSpacing
+        }
+
+        val cardWidth = maxOf(minCardWidth, (gridWidth + cardPadding * 2).toInt())
+        val cardHeaderHeight = 200f
         val cardHeight = (cardHeaderHeight + gridHeight + cardPadding * 2).toInt()
 
         val cardLeft = (width - cardWidth) / 2f
@@ -233,13 +249,14 @@ object WallpaperGenerator {
         val dividerY = textY + 80f
         canvas.drawLine(cardLeft + cardPadding, dividerY, cardRight - cardPadding, dividerY, dividerPaint)
 
-        // 8. Draw 10x10 dot grid
+        // 8. Draw dot grid
         val gridStartX = cardLeft + (cardWidth - gridWidth) / 2f + dotRadius
         val gridStartY = dividerY + 40f + dotRadius
 
+        val dotBaseColor = if (config.dotColor == DotColor.ADAPTIVE) textColor else Color.parseColor(config.dotColor.hex)
         val fillPaint = Paint().apply {
             isAntiAlias = true
-            color = textColor
+            color = dotBaseColor
             style = Paint.Style.FILL
         }
 
@@ -249,13 +266,13 @@ object WallpaperGenerator {
             style = Paint.Style.FILL
         }
 
-        for (i in 0 until totalDays) {
+        for (i in 0 until totalDots) {
             val rIdx = i / cols
             val cIdx = i % cols
             val cx = gridStartX + cIdx * (dotRadius * 2 + dotSpacing)
             val cy = gridStartY + rIdx * (dotRadius * 2 + dotSpacing)
             val isElapsed = i < elapsedDots
-            canvas.drawCircle(cx, cy, dotRadius, if (isElapsed) fillPaint else emptyPaint)
+            drawShape(canvas, cx, cy, dotRadius, config.dotShape, if (isElapsed) fillPaint else emptyPaint)
         }
 
         return bitmap
@@ -285,12 +302,57 @@ object WallpaperGenerator {
         return scaled
     }
 
-    private fun boxBlur(src: Bitmap, radius: Int): Bitmap {
+    private fun drawShape(canvas: Canvas, cx: Float, cy: Float, radius: Float, shape: DotShape, paint: Paint) {
+        when (shape) {
+            DotShape.CIRCLE -> {
+                canvas.drawCircle(cx, cy, radius, paint)
+            }
+            DotShape.SQUARE -> {
+                canvas.drawRoundRect(cx - radius, cy - radius, cx + radius, cy + radius, radius * 0.3f, radius * 0.3f, paint)
+            }
+            DotShape.DIAMOND -> {
+                val path = android.graphics.Path()
+                path.moveTo(cx, cy - radius)
+                path.lineTo(cx + radius, cy)
+                path.lineTo(cx, cy + radius)
+                path.lineTo(cx - radius, cy)
+                path.close()
+                canvas.drawPath(path, paint)
+            }
+            DotShape.STAR -> {
+                val path = android.graphics.Path()
+                val innerRadius = radius * 0.4f
+                val angles = 5
+                val startAngle = -Math.PI / 2
+                for (i in 0 until angles * 2) {
+                    val r = if (i % 2 == 0) radius else innerRadius
+                    val angle = startAngle + i * Math.PI / angles
+                    val px = cx + (r * Math.cos(angle)).toFloat()
+                    val py = cy + (r * Math.sin(angle)).toFloat()
+                    if (i == 0) path.moveTo(px, py) else path.lineTo(px, py)
+                }
+                path.close()
+                canvas.drawPath(path, paint)
+            }
+            DotShape.HEART -> {
+                val path = android.graphics.Path()
+                val topY = cy - radius * 0.5f
+                val bottomY = cy + radius
+                path.moveTo(cx, topY + radius * 0.3f)
+                path.cubicTo(cx - radius * 1.2f, cy - radius * 1.2f, cx - radius * 1.2f, cy + radius * 0.2f, cx, bottomY)
+                path.cubicTo(cx + radius * 1.2f, cy + radius * 0.2f, cx + radius * 1.2f, cy - radius * 1.2f, cx, topY + radius * 0.3f)
+                path.close()
+                canvas.drawPath(path, paint)
+            }
+        }
+    }
+
+    private fun boxBlur(src: Bitmap, blurRadius: Int): Bitmap {
         val w = src.width
         val h = src.height
         val pix = IntArray(w * h)
         src.getPixels(pix, 0, w, 0, 0, w, h)
-        val r = radius.coerceAtLeast(1)
+        val r = blurRadius.coerceAtLeast(1)
         val temp = IntArray(w * h)
 
         for (y in 0 until h) {
