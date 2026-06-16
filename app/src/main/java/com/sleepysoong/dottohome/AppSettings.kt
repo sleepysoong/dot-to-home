@@ -121,4 +121,14 @@ object AppSettings {
         val json = gson.toJson(config)
         prefs.edit().putString(KEY_CONFIG, json).apply()
     }
+
+    fun getLastUpdateDate(context: Context): Long {
+        val prefs = context.getSharedPreferences(PREFS_NAME, Context.MODE_PRIVATE)
+        return prefs.getLong("last_update_date", 0L)
+    }
+
+    fun saveLastUpdateDate(context: Context, dateMillis: Long) {
+        val prefs = context.getSharedPreferences(PREFS_NAME, Context.MODE_PRIVATE)
+        prefs.edit().putLong("last_update_date", dateMillis).apply()
+    }
 }
