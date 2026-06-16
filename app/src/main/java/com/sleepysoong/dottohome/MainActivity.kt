@@ -234,18 +234,14 @@ fun DotToHomeDashboard(isDark: Boolean) {
     val remainingDays = WallpaperGenerator.getDaysBetween(todayKST, config.targetDate).coerceAtLeast(0)
     val elapsedFromStart = WallpaperGenerator.getDaysBetween(config.startDate, todayKST).coerceAtLeast(0)
 
-    val (cols, rows, totalDots) = GridCalculator.calculate(config.dotGridType, totalSpan)
+    val (cols, rows, totalDots) = Triple(10, 10, 100)
 
-    val elapsedDots = if (config.dotGridType == DotGridType.AUTO_MATCH_DAYS) {
-        elapsedFromStart.coerceIn(0, totalDots)
+    val elapsedDots = if (totalSpan > 0) {
+        (elapsedFromStart.toFloat() / totalSpan * 100).toInt().coerceIn(0, 100)
     } else {
-        if (totalSpan >= totalDots) {
-            (elapsedFromStart.toFloat() / totalSpan * totalDots).toInt().coerceIn(0, totalDots)
-        } else {
-            elapsedFromStart.coerceIn(0, totalDots)
-        }
+        100
     }
-    val progressPercent = (elapsedDots.toFloat() / totalDots.toFloat() * 100f).coerceIn(0f, 100f)
+    val progressPercent = (elapsedFromStart.toFloat() / totalSpan.toFloat() * 100f).coerceIn(0f, 100f)
 
     val lockPhotoLauncher = rememberLauncherForActivityResult(ActivityResultContracts.PickVisualMedia()) { uri ->
         if (uri != null) {
@@ -394,38 +390,9 @@ fun DotToHomeDashboard(isDark: Boolean) {
 
                 GlassCard(backdrop = mainBackdrop, isDark = isDark) {
                     Column(verticalArrangement = Arrangement.spacedBy(10.dp)) {
-                        PretendardText("도트 설정", 14, textColor, FontWeight.Bold)
+                        PretendardText("도트 모양 설정", 14, textColor, FontWeight.Bold)
                         HorizontalDivider(color = dividerColor, thickness = 1.dp)
-                        
-                        // Grid Type
-                        Row(
-                            modifier = Modifier.fillMaxWidth().horizontalScroll(rememberScrollState()),
-                            horizontalArrangement = Arrangement.spacedBy(8.dp)
-                        ) {
-                            DotGridType.values().forEach { type ->
-                                val isSelected = config.dotGridType == type
-                                val chipBg = if (isSelected) {
-                                    if (isDark) Color.White else Color(0xFF1A1A1A)
-                                } else {
-                                    if (isDark) Color(0xFF222222) else Color(0xFFE8E8E8)
-                                }
-                                val chipText = if (isSelected) {
-                                    if (isDark) Color.Black else Color.White
-                                } else subTextColor
 
-                                Box(
-                                    modifier = Modifier
-                                        .clip(Capsule())
-                                        .background(chipBg)
-                                        .clickable { updateConfig(config.copy(dotGridType = type)) }
-                                        .padding(horizontal = 16.dp, vertical = 8.dp)
-                                ) {
-                                    PretendardText(type.label, 12, chipText, if (isSelected) FontWeight.Bold else FontWeight.Medium)
-                                }
-                            }
-                        }
-
-                        // Dot Shape
                         Row(
                             modifier = Modifier.fillMaxWidth().horizontalScroll(rememberScrollState()),
                             horizontalArrangement = Arrangement.spacedBy(8.dp)
@@ -452,11 +419,17 @@ fun DotToHomeDashboard(isDark: Boolean) {
                                 }
                             }
                         }
+                    }
+                }
 
-                        // Dot Color
+                GlassCard(backdrop = mainBackdrop, isDark = isDark) {
+                    Column(verticalArrangement = Arrangement.spacedBy(10.dp)) {
+                        PretendardText("도트 색상 설정", 14, textColor, FontWeight.Bold)
+                        HorizontalDivider(color = dividerColor, thickness = 1.dp)
+
                         Row(
                             modifier = Modifier.fillMaxWidth().horizontalScroll(rememberScrollState()),
-                            horizontalArrangement = Arrangement.spacedBy(8.dp),
+                            horizontalArrangement = Arrangement.spacedBy(12.dp),
                             verticalAlignment = Alignment.CenterVertically
                         ) {
                             DotColor.values().forEach { colorOpt ->
@@ -469,15 +442,20 @@ fun DotToHomeDashboard(isDark: Boolean) {
                                 
                                 Box(
                                     modifier = Modifier
-                                        .size(32.dp)
-                                        .clip(CircleShape)
-                                        .background(colorVal)
-                                        .border(if (isSelected) 2.dp else 0.dp, if (isSelected) (if (isDark) Color.LightGray else Color.DarkGray) else Color.Transparent, CircleShape)
+                                        .size(36.dp)
+                                        .drawBackdrop(
+                                            backdrop = mainBackdrop, shape = { CircleShape },
+                                            effects = { blur(radius = 4f.dp.toPx()); lens(refractionHeight = 1f.dp.toPx(), refractionAmount = 2f.dp.toPx(), chromaticAberration = false) },
+                                            highlight = { Highlight(style = HighlightStyle.Default(color = Color.White.copy(alpha = 0.3f), angle = -45f), width = 1.dp, blurRadius = 0.5.dp) },
+                                            shadow = { Shadow(color = Color.Black.copy(alpha = 0.3f), radius = 4.dp, offset = DpOffset(0.dp, 2.dp)) },
+                                            onDrawSurface = { drawRect(colorVal) }
+                                        )
+                                        .border(if (isSelected) 2.dp else 0.dp, if (isSelected) (if (isDark) Color.White else Color.Black) else Color.Transparent, CircleShape)
                                         .clickable { updateConfig(config.copy(dotColor = colorOpt)) },
                                     contentAlignment = Alignment.Center
                                 ) {
                                     if (colorOpt == DotColor.ADAPTIVE) {
-                                        PretendardText("A", 12, if (isDark) Color.Black else Color.White, FontWeight.Bold)
+                                        PretendardText("A", 14, if (isDark) Color.Black else Color.White, FontWeight.Bold)
                                     }
                                 }
                             }

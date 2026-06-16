@@ -101,19 +101,15 @@ object WallpaperGenerator {
         val remainingDays = getDaysBetween(todayKST, config.targetDate).coerceAtLeast(0)
         val elapsedFromStart = getDaysBetween(config.startDate, todayKST).coerceAtLeast(0)
 
-        val (cols, rows, totalDots) = GridCalculator.calculate(config.dotGridType, totalSpan)
+        val (cols, rows, totalDots) = Triple(10, 10, 100)
 
         // Map elapsed into totalDots scale
-        val elapsedDots = if (config.dotGridType == DotGridType.AUTO_MATCH_DAYS) {
-            elapsedFromStart.coerceIn(0, totalDots)
+        val elapsedDots = if (totalSpan > 0) {
+            (elapsedFromStart.toFloat() / totalSpan * 100).toInt().coerceIn(0, 100)
         } else {
-            if (totalSpan >= totalDots) {
-                (elapsedFromStart.toFloat() / totalSpan * totalDots).toInt().coerceIn(0, totalDots)
-            } else {
-                elapsedFromStart.coerceIn(0, totalDots)
-            }
+            100
         }
-        val progressPercent = (elapsedDots.toFloat() / totalDots.toFloat() * 100f).coerceIn(0f, 100f)
+        val progressPercent = (elapsedFromStart.toFloat() / totalSpan.toFloat() * 100f).coerceIn(0f, 100f)
 
         // 3. Dot position from config
         val dotOffsetY = if (isLockScreen) config.lockDotOffsetY else config.homeDotOffsetY
