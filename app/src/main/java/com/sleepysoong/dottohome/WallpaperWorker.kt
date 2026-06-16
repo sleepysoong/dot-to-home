@@ -15,6 +15,11 @@ import kotlinx.coroutines.withContext
 import java.util.Calendar
 import java.util.TimeZone
 import java.util.concurrent.TimeUnit
+import android.app.NotificationChannel
+import android.app.NotificationManager
+import android.app.PendingIntent
+import android.content.Intent
+import androidx.core.app.NotificationCompat
 
 class WallpaperWorker(
     appContext: Context,
@@ -54,12 +59,44 @@ class WallpaperWorker(
             // Schedule the next update for midnight
             scheduleNextMidnightUpdate(applicationContext)
 
+            showNotification()
+
             Log.d("WallpaperWorker", "배경화면 업데이트 완료!")
             Result.success()
         } catch (e: Exception) {
             Log.e("WallpaperWorker", "배경화면 업데이트 실패", e)
             Result.retry()
         }
+    }
+
+    private fun showNotification() {
+        val notificationManager = applicationContext.getSystemService(Context.NOTIFICATION_SERVICE) as NotificationManager
+        val channelId = "wallpaper_update_channel"
+
+        if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.O) {
+            val channel = NotificationChannel(channelId, "디데이 배경화면 알림", NotificationManager.IMPORTANCE_DEFAULT)
+            channel.description = "배경화면이 새로 갱신될 때 알림을 보냅니다."
+            notificationManager.createNotificationChannel(channel)
+        }
+
+        val intent = Intent(applicationContext, MainActivity::class.java).apply {
+            flags = Intent.FLAG_ACTIVITY_NEW_TASK or Intent.FLAG_ACTIVITY_CLEAR_TASK
+        }
+        val pendingIntent = PendingIntent.getActivity(
+            applicationContext, 0, intent,
+            PendingIntent.FLAG_UPDATE_CURRENT or PendingIntent.FLAG_IMMUTABLE
+        )
+
+        val notification = NotificationCompat.Builder(applicationContext, channelId)
+            .setSmallIcon(android.R.drawable.ic_dialog_info)
+            .setContentTitle("배경화면 업데이트 완료!")
+            .setContentText("오늘의 새로운 도트가 찍혔습니다. 폰 배경을 확인해보세요!")
+            .setPriority(NotificationCompat.PRIORITY_DEFAULT)
+            .setContentIntent(pendingIntent)
+            .setAutoCancel(true)
+            .build()
+
+        notificationManager.notify(1001, notification)
     }
 
     companion object {
