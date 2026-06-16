@@ -1,13 +1,21 @@
 package com.sleepysoong.dottohome
 
+import android.app.AlarmManager
+import android.app.NotificationChannel
+import android.app.NotificationManager
+import android.app.PendingIntent
 import android.app.WallpaperManager
 import android.content.Context
+import android.content.Intent
 import android.os.Build
 import android.util.Log
+import androidx.core.app.NotificationCompat
 import androidx.work.Constraints
 import androidx.work.CoroutineWorker
+import androidx.work.ExistingPeriodicWorkPolicy
 import androidx.work.ExistingWorkPolicy
 import androidx.work.OneTimeWorkRequestBuilder
+import androidx.work.PeriodicWorkRequestBuilder
 import androidx.work.WorkManager
 import androidx.work.WorkerParameters
 import kotlinx.coroutines.Dispatchers
@@ -15,11 +23,6 @@ import kotlinx.coroutines.withContext
 import java.util.Calendar
 import java.util.TimeZone
 import java.util.concurrent.TimeUnit
-import android.app.NotificationChannel
-import android.app.NotificationManager
-import android.app.PendingIntent
-import android.content.Intent
-import androidx.core.app.NotificationCompat
 
 class WallpaperWorker(
     appContext: Context,
@@ -28,6 +31,13 @@ class WallpaperWorker(
 
     override suspend fun doWork(): Result = withContext(Dispatchers.IO) {
         try {
+            val todayKST = AppConfig.getTodayKST()
+            if (todayKST == AppSettings.getLastUpdateDate(applicationContext)) {
+                Log.d("WallpaperWorker", "이미 오늘 배경화면이 업데이트되었습니다. 스킵합니다.")
+                scheduleNextMidnightUpdate(applicationContext)
+                return@withContext Result.success()
+            }
+
             Log.d("WallpaperWorker", "배경화면 업데이트 시작...")
 
             val metrics = applicationContext.resources.displayMetrics
@@ -54,7 +64,7 @@ class WallpaperWorker(
             }
 
             // Record the date of the successful update
-            AppSettings.saveLastUpdateDate(applicationContext, AppConfig.getTodayKST())
+            AppSettings.saveLastUpdateDate(applicationContext, todayKST)
 
             // Schedule the next update for midnight
             scheduleNextMidnightUpdate(applicationContext)
@@ -127,6 +137,7 @@ class WallpaperWorker(
 
             Log.d("WallpaperWorker", "다음 자정까지 ${delayMillis / 1000}초 후 업데이트 예약...")
 
+            // 1. OneTimeWorkRequest for midnight
             val workRequest = OneTimeWorkRequestBuilder<WallpaperWorker>()
                 .setInitialDelay(delayMillis, TimeUnit.MILLISECONDS)
                 .setConstraints(
@@ -141,11 +152,63 @@ class WallpaperWorker(
                 ExistingWorkPolicy.REPLACE,
                 workRequest
             )
+
+            // 2. Exact Alarm for midnight
+            val alarmManager = context.getSystemService(Context.ALARM_SERVICE) as AlarmManager
+            val intent = Intent(context, MidnightUpdateReceiver::class.java).apply {
+                action = "com.sleepysoong.dottohome.ACTION_MIDNIGHT_ALARM"
+            }
+            val pendingIntent = PendingIntent.getBroadcast(
+                context, 100, intent,
+                PendingIntent.FLAG_UPDATE_CURRENT or PendingIntent.FLAG_IMMUTABLE
+            )
+
+            try {
+                if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.S) {
+                    if (alarmManager.canScheduleExactAlarms()) {
+                        alarmManager.setExactAndAllowWhileIdle(AlarmManager.RTC_WAKEUP, nextMidnight.timeInMillis, pendingIntent)
+                    } else {
+                        alarmManager.setAndAllowWhileIdle(AlarmManager.RTC_WAKEUP, nextMidnight.timeInMillis, pendingIntent)
+                    }
+                } else if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.M) {
+                    alarmManager.setExactAndAllowWhileIdle(AlarmManager.RTC_WAKEUP, nextMidnight.timeInMillis, pendingIntent)
+                } else {
+                    alarmManager.setExact(AlarmManager.RTC_WAKEUP, nextMidnight.timeInMillis, pendingIntent)
+                }
+            } catch (e: Exception) {
+                Log.e("WallpaperWorker", "알람 설정 중 오류 발생", e)
+            }
+
+            // 3. Periodic Failsafe Worker (Runs every 2 hours)
+            val periodicRequest = PeriodicWorkRequestBuilder<WallpaperWorker>(2, TimeUnit.HOURS)
+                .setConstraints(
+                    Constraints.Builder()
+                        .setRequiresBatteryNotLow(false)
+                        .build()
+                )
+                .build()
+
+            WorkManager.getInstance(context).enqueueUniquePeriodicWork(
+                "BackupPeriodicUpdate",
+                ExistingPeriodicWorkPolicy.KEEP,
+                periodicRequest
+            )
         }
 
         fun cancelDailyUpdate(context: Context) {
             Log.d("WallpaperWorker", "업데이트 취소...")
             WorkManager.getInstance(context).cancelUniqueWork(WORK_NAME)
+            WorkManager.getInstance(context).cancelUniqueWork("BackupPeriodicUpdate")
+            
+            val alarmManager = context.getSystemService(Context.ALARM_SERVICE) as AlarmManager
+            val intent = Intent(context, MidnightUpdateReceiver::class.java).apply {
+                action = "com.sleepysoong.dottohome.ACTION_MIDNIGHT_ALARM"
+            }
+            val pendingIntent = PendingIntent.getBroadcast(
+                context, 100, intent,
+                PendingIntent.FLAG_UPDATE_CURRENT or PendingIntent.FLAG_IMMUTABLE
+            )
+            alarmManager.cancel(pendingIntent)
         }
         
         fun scheduleDailyUpdate(context: Context) {

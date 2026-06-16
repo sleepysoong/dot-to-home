@@ -14,7 +14,8 @@ class MidnightUpdateReceiver : BroadcastReceiver() {
             action == Intent.ACTION_USER_PRESENT || 
             action == Intent.ACTION_TIME_CHANGED ||
             action == Intent.ACTION_TIMEZONE_CHANGED ||
-            action == Intent.ACTION_DATE_CHANGED) {
+            action == Intent.ACTION_DATE_CHANGED ||
+            action == "com.sleepysoong.dottohome.ACTION_MIDNIGHT_ALARM") {
             
             val todayKST = AppConfig.getTodayKST()
             val lastUpdate = AppSettings.getLastUpdateDate(context)
