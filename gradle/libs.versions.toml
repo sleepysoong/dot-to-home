@@ -7,6 +7,12 @@ androidxActivity = "1.9.0"
 composeBom = "2024.12.01"
 kyantShapes = "1.2.0"
 kyantBackdrop = "2.0.0"
+junit = "4.13.2"
+robolectric = "4.12.1"
+mockk = "1.13.11"
+kotlinxCoroutines = "1.8.1"
+androidxWork = "2.9.0"
+androidxTest = "1.6.1"
 
 [libraries]
 androidx-core-ktx = { group = "androidx.core", name = "core-ktx", version.ref = "androidxCore" }
@@ -19,6 +25,13 @@ androidx-compose-ui-tooling-preview = { group = "androidx.compose.ui", name = "u
 androidx-compose-material3 = { group = "androidx.compose.material3", name = "material3" }
 kyant-shapes = { group = "io.github.kyant0", name = "shapes", version.ref = "kyantShapes" }
 kyant-backdrop = { group = "io.github.kyant0", name = "backdrop", version.ref = "kyantBackdrop" }
+junit = { group = "junit", name = "junit", version.ref = "junit" }
+robolectric = { group = "org.robolectric", name = "robolectric", version.ref = "robolectric" }
+mockk = { group = "io.mockk", name = "mockk", version.ref = "mockk" }
+kotlinx-coroutines-test = { group = "org.jetbrains.kotlinx", name = "kotlinx-coroutines-test", version.ref = "kotlinxCoroutines" }
+androidx-work-testing = { group = "androidx.work", name = "work-testing", version.ref = "androidxWork" }
+androidx-test-core = { group = "androidx.test", name = "core", version.ref = "androidxTest" }
+
 
 [plugins]
 android-application = { id = "com.android.application", version.ref = "agp" }

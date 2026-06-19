@@ -70,6 +70,11 @@ android {
         abortOnError = false
         checkReleaseBuilds = false
     }
+    testOptions {
+        unitTests {
+            isIncludeAndroidResources = true
+        }
+    }
 }
 
 dependencies {
@@ -81,6 +86,7 @@ dependencies {
     implementation(libs.androidx.compose.ui.graphics)
     implementation(libs.androidx.compose.ui.tooling.preview)
     implementation(libs.androidx.compose.material3)
+    implementation("androidx.compose.foundation:foundation")
 
     // Kyant Liquid Glass and Shapes dependency
     implementation(libs.kyant.shapes)
@@ -91,6 +97,13 @@ dependencies {
     
     // Gson for simple settings storage
     implementation("com.google.code.gson:gson:2.10.1")
+
+    testImplementation(libs.junit)
+    testImplementation(libs.robolectric)
+    testImplementation(libs.mockk)
+    testImplementation(libs.kotlinx.coroutines.test)
+    testImplementation(libs.androidx.work.testing)
+    testImplementation(libs.androidx.test.core)
 }
 
 tasks.configureEach {
@@ -103,4 +116,8 @@ tasks.withType<org.jetbrains.kotlin.gradle.tasks.KotlinCompile>().configureEach 
     compilerOptions {
         jvmTarget.set(org.jetbrains.kotlin.gradle.dsl.JvmTarget.JVM_11)
     }
+}
+
+tasks.withType<Test>().configureEach {
+    maxHeapSize = "256m"
 }
