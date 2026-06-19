@@ -28,6 +28,10 @@ import androidx.compose.foundation.rememberScrollState
 import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.foundation.verticalScroll
+import androidx.compose.material.icons.Icons
+import androidx.compose.material.icons.filled.Delete
+import androidx.compose.material.icons.filled.KeyboardArrowDown
+import androidx.compose.material.icons.filled.KeyboardArrowUp
 import androidx.compose.material3.*
 import androidx.compose.runtime.*
 import androidx.compose.ui.Alignment
@@ -213,7 +217,7 @@ fun DotToHomeDashboard(isDark: Boolean) {
         config = newConfig
         AppSettings.saveConfig(context, newConfig)
         previewKey++
-        
+
         applyWallpaperDebounced(
             context = context,
             config = newConfig,
@@ -223,25 +227,22 @@ fun DotToHomeDashboard(isDark: Boolean) {
         )
     }
 
+    // Date picker state: which item index + which date (start vs target)
     var showDatePicker by remember { mutableStateOf(false) }
-    var pickingStartDate by remember { mutableStateOf(false) }
+    var pickingItemIndex by remember { mutableIntStateOf(0) }
+    var pickingStartDate by remember { mutableStateOf(true) }
+
     var selectedTab by remember { mutableIntStateOf(0) } // 0 = lock, 1 = home
+
+    // Expanded accordion state per item
+    var expandedIndex by remember { mutableIntStateOf(0) }
 
     val mainBackdrop = rememberLayerBackdrop()
 
-    val todayKST = AppConfig.getTodayKST()
-    val totalSpan = WallpaperGenerator.getDaysBetween(config.startDate, config.targetDate).coerceAtLeast(1)
-    val remainingDays = WallpaperGenerator.getDaysBetween(todayKST, config.targetDate).coerceAtLeast(0)
-    val elapsedFromStart = WallpaperGenerator.getDaysBetween(config.startDate, todayKST).coerceAtLeast(0)
-
-    val (cols, rows, totalDots) = Triple(10, 10, 100)
-
-    val elapsedDots = if (totalSpan > 0) {
-        (elapsedFromStart.toFloat() / totalSpan * 100).toInt().coerceIn(0, 100)
-    } else {
-        100
-    }
-    val progressPercent = (elapsedFromStart.toFloat() / totalSpan.toFloat() * 100f).coerceIn(0f, 100f)
+    val textColor = if (isDark) Color.White else Color(0xFF1A1A1A)
+    val subTextColor = if (isDark) Color(0xFFAAAAAA) else Color(0xFF999999)
+    val dividerColor = if (isDark) Color(0xFF333333) else Color(0xFFE8E8E8)
+    val textFieldBg = if (isDark) Color(0xFF222224) else Color(0xFFF0F0F2)
 
     val lockPhotoLauncher = rememberLauncherForActivityResult(ActivityResultContracts.PickVisualMedia()) { uri ->
         if (uri != null) {
@@ -266,11 +267,6 @@ fun DotToHomeDashboard(isDark: Boolean) {
             }
         }
     }
-
-    val textColor = if (isDark) Color.White else Color(0xFF1A1A1A)
-    val subTextColor = if (isDark) Color(0xFFAAAAAA) else Color(0xFF999999)
-    val dividerColor = if (isDark) Color(0xFF333333) else Color(0xFFE8E8E8)
-    val textFieldBg = if (isDark) Color(0xFF222224) else Color(0xFFF0F0F2)
 
     Box(modifier = Modifier.fillMaxSize()) {
         Box(
@@ -339,123 +335,284 @@ fun DotToHomeDashboard(isDark: Boolean) {
                 horizontalAlignment = Alignment.CenterHorizontally,
                 verticalArrangement = Arrangement.spacedBy(16.dp)
             ) {
-                GlassCard(backdrop = mainBackdrop, isDark = isDark) {
-                    Column(verticalArrangement = Arrangement.spacedBy(12.dp)) {
-                        Row(
-                            modifier = Modifier.fillMaxWidth(),
-                            horizontalArrangement = Arrangement.SpaceBetween,
-                            verticalAlignment = Alignment.Bottom
-                        ) {
-                            Column {
-                                PretendardText("디데이", 12, subTextColor, FontWeight.Medium)
-                                PretendardText(if (remainingDays == 0) "D-DAY" else "D-$remainingDays", 32, textColor, FontWeight.Bold)
-                            }
-                            PretendardText(String.format("%.1f%%", progressPercent), 20, textColor, FontWeight.Bold)
-                        }
-                        HorizontalDivider(color = dividerColor, thickness = 1.dp)
-                        DotGrid(cols, rows, totalDots, elapsedDots, isDark, config.dotShape, config.dotColor, Modifier.fillMaxWidth())
-                    }
+
+                // ── D-Day items section header ─────────────────────────────────
+                Row(
+                    modifier = Modifier.fillMaxWidth(),
+                    horizontalArrangement = Arrangement.SpaceBetween,
+                    verticalAlignment = Alignment.CenterVertically
+                ) {
+                    PretendardText("디데이 목록", 16, textColor, FontWeight.Bold)
+                    PretendardText("${config.ddayItems.size}/5", 13, subTextColor, FontWeight.Medium)
                 }
 
-                GlassCard(backdrop = mainBackdrop, isDark = isDark) {
-                    Column(verticalArrangement = Arrangement.spacedBy(10.dp)) {
-                        PretendardText("날짜 설정", 14, textColor, FontWeight.Bold)
-                        HorizontalDivider(color = dividerColor, thickness = 1.dp)
-                        Row(modifier = Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.spacedBy(12.dp)) {
-                            Column(
-                                modifier = Modifier
-                                    .weight(1f)
-                                    .clip(RoundedCornerShape(12.dp))
-                                    .background(textFieldBg)
-                                    .clickable { pickingStartDate = true; showDatePicker = true }
-                                    .padding(12.dp)
-                            ) {
-                                PretendardText("시작일", 11, subTextColor)
-                                PretendardText(formatDateKorean(config.startDate), 14, textColor, FontWeight.Bold, Modifier.padding(top = 4.dp))
-                            }
-                            Column(
-                                modifier = Modifier
-                                    .weight(1f)
-                                    .clip(RoundedCornerShape(12.dp))
-                                    .background(textFieldBg)
-                                    .clickable { pickingStartDate = false; showDatePicker = true }
-                                    .padding(12.dp)
-                            ) {
-                                PretendardText("목표일 (D-Day)", 11, subTextColor)
-                                PretendardText(formatDateKorean(config.targetDate), 14, textColor, FontWeight.Bold, Modifier.padding(top = 4.dp))
-                            }
-                        }
-                    }
-                }
+                // ── D-Day item accordion cards ─────────────────────────────────
+                config.ddayItems.forEachIndexed { index, item ->
+                    val isExpanded = expandedIndex == index
+                    val todayKST = AppConfig.getTodayKST()
+                    val totalSpan = WallpaperGenerator.getDaysBetween(item.startDate, item.targetDate).coerceAtLeast(1)
+                    val remainingDays = WallpaperGenerator.getDaysBetween(todayKST, item.targetDate).coerceAtLeast(0)
+                    val elapsedFromStart = WallpaperGenerator.getDaysBetween(item.startDate, todayKST).coerceAtLeast(0)
+                    val cols = 10; val rows = 10; val totalDots = 100
+                    val elapsedDots = if (totalSpan > 0)
+                        (elapsedFromStart.toFloat() / totalSpan * 100).toInt().coerceIn(0, 100)
+                    else 100
+                    val progressPercent = (elapsedFromStart.toFloat() / totalSpan.toFloat() * 100f).coerceIn(0f, 100f)
 
-                GlassCard(backdrop = mainBackdrop, isDark = isDark) {
-                    Column(verticalArrangement = Arrangement.spacedBy(10.dp)) {
-                        PretendardText("도트 모양 설정", 14, textColor, FontWeight.Bold)
-                        HorizontalDivider(color = dividerColor, thickness = 1.dp)
-
-                        Row(
-                            modifier = Modifier.fillMaxWidth().horizontalScroll(rememberScrollState()),
-                            horizontalArrangement = Arrangement.spacedBy(8.dp)
-                        ) {
-                            DotShape.values().forEach { shape ->
-                                val isSelected = config.dotShape == shape
-                                val chipBg = if (isSelected) {
-                                    if (isDark) Color.White else Color(0xFF1A1A1A)
-                                } else {
-                                    if (isDark) Color(0xFF222222) else Color(0xFFE8E8E8)
+                    GlassCard(backdrop = mainBackdrop, isDark = isDark) {
+                        Column(verticalArrangement = Arrangement.spacedBy(0.dp)) {
+                            // ── Accordion header ────────────────────────────────
+                            Row(
+                                modifier = Modifier
+                                    .fillMaxWidth()
+                                    .clickable(
+                                        interactionSource = remember { MutableInteractionSource() },
+                                        indication = null
+                                    ) {
+                                        expandedIndex = if (isExpanded) -1 else index
+                                    },
+                                horizontalArrangement = Arrangement.SpaceBetween,
+                                verticalAlignment = Alignment.CenterVertically
+                            ) {
+                                Column(modifier = Modifier.weight(1f)) {
+                                    PretendardText(
+                                        item.label.ifBlank { "디데이 ${index + 1}" },
+                                        14, textColor, FontWeight.SemiBold
+                                    )
+                                    PretendardText(
+                                        if (remainingDays == 0) "D-DAY" else "D-$remainingDays  •  ${String.format("%.1f%%", progressPercent)}",
+                                        12, subTextColor, FontWeight.Normal,
+                                        Modifier.padding(top = 2.dp)
+                                    )
                                 }
-                                val chipText = if (isSelected) {
-                                    if (isDark) Color.Black else Color.White
-                                } else subTextColor
-
-                                Box(
-                                    modifier = Modifier
-                                        .clip(Capsule())
-                                        .background(chipBg)
-                                        .clickable { updateConfig(config.copy(dotShape = shape)) }
-                                        .padding(horizontal = 16.dp, vertical = 8.dp)
+                                Row(
+                                    verticalAlignment = Alignment.CenterVertically,
+                                    horizontalArrangement = Arrangement.spacedBy(4.dp)
                                 ) {
-                                    PretendardText(shape.label, 12, chipText, if (isSelected) FontWeight.Bold else FontWeight.Medium)
+                                    // Delete button (disabled if only 1 item)
+                                    if (config.ddayItems.size > 1) {
+                                        IconButton(
+                                            onClick = {
+                                                val newItems = config.ddayItems.toMutableList()
+                                                newItems.removeAt(index)
+                                                if (expandedIndex >= newItems.size) {
+                                                    expandedIndex = newItems.size - 1
+                                                }
+                                                updateConfig(config.copy(ddayItems = newItems))
+                                            },
+                                            modifier = Modifier.size(36.dp)
+                                        ) {
+                                            Icon(
+                                                imageVector = Icons.Default.Delete,
+                                                contentDescription = "삭제",
+                                                tint = if (isDark) Color(0xFFFF6B6B) else Color(0xFFE53E3E),
+                                                modifier = Modifier.size(18.dp)
+                                            )
+                                        }
+                                    }
+                                    Icon(
+                                        imageVector = if (isExpanded) Icons.Default.KeyboardArrowUp
+                                        else Icons.Default.KeyboardArrowDown,
+                                        contentDescription = if (isExpanded) "접기" else "펼치기",
+                                        tint = subTextColor,
+                                        modifier = Modifier.size(20.dp)
+                                    )
                                 }
                             }
-                        }
-                    }
-                }
 
-                GlassCard(backdrop = mainBackdrop, isDark = isDark) {
-                    Column(verticalArrangement = Arrangement.spacedBy(10.dp)) {
-                        PretendardText("도트 색상 설정", 14, textColor, FontWeight.Bold)
-                        HorizontalDivider(color = dividerColor, thickness = 1.dp)
+                            if (isExpanded) {
+                                Spacer(Modifier.height(12.dp))
+                                HorizontalDivider(color = dividerColor, thickness = 1.dp)
+                                Spacer(Modifier.height(12.dp))
 
-                        Row(
-                            modifier = Modifier.fillMaxWidth().horizontalScroll(rememberScrollState()),
-                            horizontalArrangement = Arrangement.spacedBy(12.dp),
-                            verticalAlignment = Alignment.CenterVertically
-                        ) {
-                            DotColor.values().forEach { colorOpt ->
-                                val isSelected = config.dotColor == colorOpt
-                                val colorVal = if (colorOpt == DotColor.ADAPTIVE) {
-                                    if (isDark) Color.White else Color(0xFF1A1A1A)
-                                } else {
-                                    Color(android.graphics.Color.parseColor(colorOpt.hex))
-                                }
-                                
-                                Box(
-                                    modifier = Modifier
-                                        .size(36.dp)
-                                        .drawBackdrop(
-                                            backdrop = mainBackdrop, shape = { CircleShape },
-                                            effects = { blur(radius = 4f.dp.toPx()); lens(refractionHeight = 1f.dp.toPx(), refractionAmount = 2f.dp.toPx(), chromaticAberration = false) },
-                                            highlight = { Highlight(style = HighlightStyle.Default(color = Color.White.copy(alpha = 0.3f), angle = -45f), width = 1.dp, blurRadius = 0.5.dp) },
-                                            shadow = { Shadow(color = Color.Black.copy(alpha = 0.3f), radius = 4.dp, offset = DpOffset(0.dp, 2.dp)) },
-                                            onDrawSurface = { drawRect(colorVal) }
+                                // ── Dot preview ─────────────────────────────────
+                                Row(
+                                    modifier = Modifier.fillMaxWidth(),
+                                    horizontalArrangement = Arrangement.SpaceBetween,
+                                    verticalAlignment = Alignment.Bottom
+                                ) {
+                                    Column {
+                                        PretendardText("디데이", 11, subTextColor, FontWeight.Medium)
+                                        PretendardText(
+                                            if (remainingDays == 0) "D-DAY" else "D-$remainingDays",
+                                            28, textColor, FontWeight.Bold
                                         )
-                                        .border(if (isSelected) 2.dp else 0.dp, if (isSelected) (if (isDark) Color.White else Color.Black) else Color.Transparent, CircleShape)
-                                        .clickable { updateConfig(config.copy(dotColor = colorOpt)) },
-                                    contentAlignment = Alignment.Center
+                                    }
+                                    PretendardText(
+                                        String.format("%.1f%%", progressPercent),
+                                        18, textColor, FontWeight.Bold
+                                    )
+                                }
+                                HorizontalDivider(color = dividerColor, thickness = 1.dp, modifier = Modifier.padding(vertical = 8.dp))
+                                DotGrid(cols, rows, totalDots, elapsedDots, isDark, item.dotShape, item.dotColor, Modifier.fillMaxWidth())
+
+                                Spacer(Modifier.height(12.dp))
+                                HorizontalDivider(color = dividerColor, thickness = 1.dp)
+                                Spacer(Modifier.height(12.dp))
+
+                                // ── Label text field ─────────────────────────────
+                                PretendardText("라벨", 12, subTextColor, FontWeight.Medium)
+                                Spacer(Modifier.height(6.dp))
+                                var labelValue by remember(item.id) { mutableStateOf(item.label) }
+                                OutlinedTextField(
+                                    value = labelValue,
+                                    onValueChange = { v ->
+                                        labelValue = v
+                                        val newItems = config.ddayItems.toMutableList()
+                                        newItems[index] = item.copy(label = v)
+                                        updateConfig(config.copy(ddayItems = newItems))
+                                    },
+                                    modifier = Modifier.fillMaxWidth(),
+                                    textStyle = TextStyle(fontFamily = Pretendard, fontSize = 14.sp, color = textColor),
+                                    singleLine = true,
+                                    shape = RoundedCornerShape(12.dp),
+                                    colors = OutlinedTextFieldDefaults.colors(
+                                        focusedBorderColor = if (isDark) Color.White else Color(0xFF1A1A1A),
+                                        unfocusedBorderColor = dividerColor,
+                                        focusedContainerColor = if (isDark) Color.White.copy(alpha = 0.1f) else Color.White.copy(alpha = 0.5f),
+                                        unfocusedContainerColor = if (isDark) Color.White.copy(alpha = 0.05f) else Color.White.copy(alpha = 0.3f),
+                                        cursorColor = textColor
+                                    )
+                                )
+
+                                Spacer(Modifier.height(12.dp))
+
+                                // ── Date pickers ─────────────────────────────────
+                                PretendardText("날짜 설정", 12, subTextColor, FontWeight.Medium)
+                                Spacer(Modifier.height(6.dp))
+                                Row(
+                                    modifier = Modifier.fillMaxWidth(),
+                                    horizontalArrangement = Arrangement.spacedBy(12.dp)
                                 ) {
-                                    if (colorOpt == DotColor.ADAPTIVE) {
-                                        PretendardText("A", 14, if (isDark) Color.Black else Color.White, FontWeight.Bold)
+                                    Column(
+                                        modifier = Modifier
+                                            .weight(1f)
+                                            .clip(RoundedCornerShape(12.dp))
+                                            .background(textFieldBg)
+                                            .clickable {
+                                                pickingItemIndex = index
+                                                pickingStartDate = true
+                                                showDatePicker = true
+                                            }
+                                            .padding(12.dp)
+                                    ) {
+                                        PretendardText("시작일", 11, subTextColor)
+                                        PretendardText(
+                                            formatDateKorean(item.startDate), 13, textColor,
+                                            FontWeight.Bold, Modifier.padding(top = 4.dp)
+                                        )
+                                    }
+                                    Column(
+                                        modifier = Modifier
+                                            .weight(1f)
+                                            .clip(RoundedCornerShape(12.dp))
+                                            .background(textFieldBg)
+                                            .clickable {
+                                                pickingItemIndex = index
+                                                pickingStartDate = false
+                                                showDatePicker = true
+                                            }
+                                            .padding(12.dp)
+                                    ) {
+                                        PretendardText("목표일 (D-Day)", 11, subTextColor)
+                                        PretendardText(
+                                            formatDateKorean(item.targetDate), 13, textColor,
+                                            FontWeight.Bold, Modifier.padding(top = 4.dp)
+                                        )
+                                    }
+                                }
+
+                                Spacer(Modifier.height(12.dp))
+
+                                // ── Shape selector ───────────────────────────────
+                                PretendardText("도트 모양", 12, subTextColor, FontWeight.Medium)
+                                Spacer(Modifier.height(6.dp))
+                                Row(
+                                    modifier = Modifier
+                                        .fillMaxWidth()
+                                        .horizontalScroll(rememberScrollState()),
+                                    horizontalArrangement = Arrangement.spacedBy(8.dp)
+                                ) {
+                                    DotShape.values().forEach { shape ->
+                                        val isSelected = item.dotShape == shape
+                                        val chipBg = if (isSelected) {
+                                            if (isDark) Color.White else Color(0xFF1A1A1A)
+                                        } else {
+                                            if (isDark) Color(0xFF222222) else Color(0xFFE8E8E8)
+                                        }
+                                        val chipText = if (isSelected) {
+                                            if (isDark) Color.Black else Color.White
+                                        } else subTextColor
+
+                                        Box(
+                                            modifier = Modifier
+                                                .clip(Capsule())
+                                                .background(chipBg)
+                                                .clickable {
+                                                    val newItems = config.ddayItems.toMutableList()
+                                                    newItems[index] = item.copy(dotShape = shape)
+                                                    updateConfig(config.copy(ddayItems = newItems))
+                                                }
+                                                .padding(horizontal = 16.dp, vertical = 8.dp)
+                                        ) {
+                                            PretendardText(
+                                                shape.label, 12, chipText,
+                                                if (isSelected) FontWeight.Bold else FontWeight.Medium
+                                            )
+                                        }
+                                    }
+                                }
+
+                                Spacer(Modifier.height(12.dp))
+
+                                // ── Color selector ───────────────────────────────
+                                PretendardText("도트 색상", 12, subTextColor, FontWeight.Medium)
+                                Spacer(Modifier.height(6.dp))
+                                Row(
+                                    modifier = Modifier
+                                        .fillMaxWidth()
+                                        .horizontalScroll(rememberScrollState()),
+                                    horizontalArrangement = Arrangement.spacedBy(12.dp),
+                                    verticalAlignment = Alignment.CenterVertically
+                                ) {
+                                    DotColor.values().forEach { colorOpt ->
+                                        val isSelected = item.dotColor == colorOpt
+                                        val colorVal = if (colorOpt == DotColor.ADAPTIVE) {
+                                            if (isDark) Color.White else Color(0xFF1A1A1A)
+                                        } else {
+                                            Color(android.graphics.Color.parseColor(colorOpt.hex))
+                                        }
+
+                                        Box(
+                                            modifier = Modifier
+                                                .size(36.dp)
+                                                .drawBackdrop(
+                                                    backdrop = mainBackdrop, shape = { CircleShape },
+                                                    effects = { blur(radius = 4f.dp.toPx()); lens(refractionHeight = 1f.dp.toPx(), refractionAmount = 2f.dp.toPx(), chromaticAberration = false) },
+                                                    highlight = { Highlight(style = HighlightStyle.Default(color = Color.White.copy(alpha = 0.3f), angle = -45f), width = 1.dp, blurRadius = 0.5.dp) },
+                                                    shadow = { Shadow(color = Color.Black.copy(alpha = 0.3f), radius = 4.dp, offset = DpOffset(0.dp, 2.dp)) },
+                                                    onDrawSurface = { drawRect(colorVal) }
+                                                )
+                                                .border(
+                                                    if (isSelected) 2.dp else 0.dp,
+                                                    if (isSelected) (if (isDark) Color.White else Color.Black) else Color.Transparent,
+                                                    CircleShape
+                                                )
+                                                .clickable {
+                                                    val newItems = config.ddayItems.toMutableList()
+                                                    newItems[index] = item.copy(dotColor = colorOpt)
+                                                    updateConfig(config.copy(ddayItems = newItems))
+                                                },
+                                            contentAlignment = Alignment.Center
+                                        ) {
+                                            if (colorOpt == DotColor.ADAPTIVE) {
+                                                PretendardText(
+                                                    "A", 14,
+                                                    if (isDark) Color.Black else Color.White,
+                                                    FontWeight.Bold
+                                                )
+                                            }
+                                        }
                                     }
                                 }
                             }
@@ -463,33 +620,38 @@ fun DotToHomeDashboard(isDark: Boolean) {
                     }
                 }
 
-                GlassCard(backdrop = mainBackdrop, isDark = isDark) {
-                    Column(verticalArrangement = Arrangement.spacedBy(10.dp)) {
-                        PretendardText("배경화면 텍스트 설정", 14, textColor, FontWeight.Bold)
-                        HorizontalDivider(color = dividerColor, thickness = 1.dp)
-                        var textValue by remember(config.customLabel) { mutableStateOf(config.customLabel) }
-                        OutlinedTextField(
-                            value = textValue,
-                            onValueChange = { 
-                                textValue = it
-                                updateConfig(config.copy(customLabel = it))
-                            },
-                            modifier = Modifier.fillMaxWidth(),
-                            textStyle = TextStyle(fontFamily = Pretendard, fontSize = 14.sp, color = textColor),
-                            singleLine = true,
-                            shape = RoundedCornerShape(12.dp),
-                            colors = OutlinedTextFieldDefaults.colors(
-                                focusedBorderColor = if (isDark) Color.White else Color(0xFF1A1A1A),
-                                unfocusedBorderColor = dividerColor,
-                                focusedContainerColor = if (isDark) Color.White.copy(alpha=0.1f) else Color.White.copy(alpha=0.5f),
-                                unfocusedContainerColor = if (isDark) Color.White.copy(alpha=0.05f) else Color.White.copy(alpha=0.3f),
-                                cursorColor = textColor
+                // ── Add D-Day button ───────────────────────────────────────────
+                if (config.ddayItems.size < 5) {
+                    Box(
+                        modifier = Modifier
+                            .fillMaxWidth()
+                            .clip(RoundedCornerShape(18.dp))
+                            .drawBackdrop(
+                                backdrop = mainBackdrop, shape = { RoundedCornerShape(18.dp) },
+                                effects = { blur(radius = 8f.dp.toPx()); lens(refractionHeight = 3f.dp.toPx(), refractionAmount = 5f.dp.toPx(), chromaticAberration = false) },
+                                highlight = { Highlight(style = HighlightStyle.Default(color = Color.White.copy(alpha = 0.15f), angle = -45f), width = 1.dp, blurRadius = 0.5.dp) },
+                                onDrawSurface = {
+                                    drawRect(
+                                        if (isDark) Color(0xFF1A1A1C).copy(alpha = 0.5f)
+                                        else Color.White.copy(alpha = 0.6f)
+                                    )
+                                }
                             )
-                        )
+                            .clickable {
+                                if (config.ddayItems.size < 5) {
+                                    val newItems = config.ddayItems + DDayItem()
+                                    expandedIndex = newItems.size - 1
+                                    updateConfig(config.copy(ddayItems = newItems))
+                                }
+                            }
+                            .padding(vertical = 16.dp),
+                        contentAlignment = Alignment.Center
+                    ) {
+                        PretendardText("+ 디데이 추가", 14, subTextColor, FontWeight.SemiBold)
                     }
                 }
 
-                // Segmented control and Toggle
+                // ── Segmented control and Toggle ───────────────────────────────
                 Row(
                     modifier = Modifier.fillMaxWidth(),
                     horizontalArrangement = Arrangement.spacedBy(12.dp),
@@ -508,7 +670,10 @@ fun DotToHomeDashboard(isDark: Boolean) {
                     GlassToggle(
                         checked = isCurrentEnabled,
                         onCheckedChange = { checked ->
-                            val newConfig = if (selectedTab == 0) config.copy(lockEnabled = checked) else config.copy(homeEnabled = checked)
+                            val newConfig = if (selectedTab == 0)
+                                config.copy(lockEnabled = checked)
+                            else
+                                config.copy(homeEnabled = checked)
                             updateConfig(newConfig)
                         },
                         backdrop = mainBackdrop,
@@ -516,28 +681,32 @@ fun DotToHomeDashboard(isDark: Boolean) {
                     )
                 }
 
+                // ── Wallpaper preview ─────────────────────────────────────────
                 WallpaperPreviewSection(
                     isLockScreen = selectedTab == 0,
                     config = config,
                     previewKey = previewKey,
                     backdrop = mainBackdrop,
                     isDark = isDark,
-                    cols = cols,
-                    rows = rows,
-                    totalDots = totalDots,
-                    elapsedDays = elapsedDots,
-                    remainingDays = remainingDays,
-                    progressPercent = progressPercent,
                     onDotOffsetYChange = { newY ->
-                        val newConfig = if (selectedTab == 0) config.copy(lockDotOffsetY = newY) else config.copy(homeDotOffsetY = newY)
+                        val newConfig = if (selectedTab == 0)
+                            config.copy(lockDotOffsetY = newY)
+                        else
+                            config.copy(homeDotOffsetY = newY)
                         updateConfig(newConfig)
                     },
                     onPickPhoto = {
-                        val req = androidx.activity.result.PickVisualMediaRequest(ActivityResultContracts.PickVisualMedia.ImageOnly)
-                        if (selectedTab == 0) lockPhotoLauncher.launch(req) else homePhotoLauncher.launch(req)
+                        val req = androidx.activity.result.PickVisualMediaRequest(
+                            ActivityResultContracts.PickVisualMedia.ImageOnly
+                        )
+                        if (selectedTab == 0) lockPhotoLauncher.launch(req)
+                        else homePhotoLauncher.launch(req)
                     },
                     onResetDefault = {
-                        val newConfig = if (selectedTab == 0) config.copy(lockUseCustomImage = false) else config.copy(homeUseCustomImage = false)
+                        val newConfig = if (selectedTab == 0)
+                            config.copy(lockUseCustomImage = false)
+                        else
+                            config.copy(homeUseCustomImage = false)
                         updateConfig(newConfig)
                         Toast.makeText(context, "기본 배경으로 초기화되었습니다", Toast.LENGTH_SHORT).show()
                     }
@@ -549,7 +718,9 @@ fun DotToHomeDashboard(isDark: Boolean) {
     }
 
     if (showDatePicker) {
-        val initialDate = if (pickingStartDate) config.startDate else config.targetDate
+        val safeIndex = pickingItemIndex.coerceIn(0, config.ddayItems.size - 1)
+        val item = config.ddayItems[safeIndex]
+        val initialDate = if (pickingStartDate) item.startDate else item.targetDate
         val datePickerState = rememberDatePickerState(initialSelectedDateMillis = initialDate)
         DatePickerDialog(
             onDismissRequest = { showDatePicker = false },
@@ -557,8 +728,12 @@ fun DotToHomeDashboard(isDark: Boolean) {
                 TextButton(onClick = {
                     val selected = datePickerState.selectedDateMillis
                     if (selected != null) {
-                        val newConfig = if (pickingStartDate) config.copy(startDate = selected) else config.copy(targetDate = selected)
-                        updateConfig(newConfig)
+                        val newItems = config.ddayItems.toMutableList()
+                        newItems[safeIndex] = if (pickingStartDate)
+                            item.copy(startDate = selected)
+                        else
+                            item.copy(targetDate = selected)
+                        updateConfig(config.copy(ddayItems = newItems))
                     }
                     showDatePicker = false
                 }) {
@@ -801,7 +976,7 @@ fun DotGrid(
         val dotDiameter = availableWidth / (cols + (cols - 1) * spacingRatio)
         val spacing = (dotDiameter * spacingRatio).dp
         val dotSize = dotDiameter.dp
-        
+
         Column(
             modifier = Modifier.fillMaxWidth(),
             verticalArrangement = Arrangement.spacedBy(spacing),
@@ -837,7 +1012,7 @@ fun DotShapeView(size: androidx.compose.ui.unit.Dp, color: Color, shape: DotShap
         val cx = size.toPx() / 2f
         val cy = size.toPx() / 2f
         val radius = size.toPx() / 2f
-        
+
         when (shape) {
             DotShape.CIRCLE -> {
                 drawCircle(color = color, radius = radius, center = Offset(cx, cy))
@@ -917,12 +1092,6 @@ fun WallpaperPreviewSection(
     previewKey: Int,
     backdrop: Backdrop,
     isDark: Boolean,
-    cols: Int,
-    rows: Int,
-    totalDots: Int,
-    elapsedDays: Int,
-    remainingDays: Int,
-    progressPercent: Float,
     onDotOffsetYChange: (Float) -> Unit,
     onPickPhoto: () -> Unit,
     onResetDefault: () -> Unit
@@ -937,8 +1106,6 @@ fun WallpaperPreviewSection(
     val textColor = if (isDark) Color.White else Color(0xFF1A1A1A)
     val subTextColor = if (isDark) Color(0xFFAAAAAA) else Color(0xFF999999)
     val dividerColor = if (isDark) Color(0xFF333333) else Color(0xFFE8E8E8)
-
-    val previewAlpha = if (isEnabled) 1f else 0.4f
 
     PretendardText(
         text = "$screenLabel 미리보기" + if (!isEnabled) " (비활성화됨)" else "",
@@ -971,56 +1138,89 @@ fun WallpaperPreviewSection(
                     Image(
                         bitmap = bitmap.asImageBitmap(),
                         contentDescription = null,
-                        modifier = Modifier.fillMaxSize().alpha(previewAlpha),
+                        modifier = Modifier.fillMaxSize(),
                         contentScale = ContentScale.Crop
                     )
                 } else {
-                    Box(modifier = Modifier.fillMaxSize().background(if (isDark) Color.Black else Color.White).alpha(previewAlpha))
+                    Box(modifier = Modifier.fillMaxSize().background(if (isDark) Color.Black else Color.White))
                 }
             } else {
-                Box(modifier = Modifier.fillMaxSize().background(if (isDark) Color.Black else Color.White).alpha(previewAlpha))
+                Box(modifier = Modifier.fillMaxSize().background(if (isDark) Color.Black else Color.White))
             }
         }
 
         if (isEnabled) {
             BoxWithConstraints(modifier = Modifier.fillMaxSize()) {
-                val maxOffset = maxHeight * 0.5f 
-                val actualOffset = maxOffset * dotOffsetY
+                val items = config.ddayItems.ifEmpty { listOf(DDayItem()) }
+                val itemCount = items.size
+
+                // Scale card heights in preview
+                val cardWidthFraction = when {
+                    itemCount >= 3 -> 0.82f
+                    itemCount == 2 -> 0.85f
+                    else -> 0.88f
+                }
 
                 val cardSurface = if (isDark) Color.Black.copy(alpha = 0.5f) else Color.White.copy(alpha = 0.7f)
                 val cardHighlight = if (isDark) Color.White.copy(alpha = 0.15f) else Color.White.copy(alpha = 0.4f)
 
-                Box(
+                val maxOffset = maxHeight * 0.5f
+                val actualOffset = maxOffset * dotOffsetY
+
+                Column(
                     modifier = Modifier
-                        .wrapContentSize()
-                        .widthIn(min = maxWidth * 0.6f, max = maxWidth * 0.88f)
+                        .wrapContentHeight()
+                        .fillMaxWidth(cardWidthFraction)
                         .align(Alignment.TopCenter)
-                        .offset(y = actualOffset)
-                        .drawBackdrop(
-                            backdrop = previewBackdrop, shape = { RoundedCornerShape(20.dp) },
-                            effects = { blur(radius = 14f.dp.toPx()); lens(refractionHeight = 6f.dp.toPx(), refractionAmount = 10f.dp.toPx(), chromaticAberration = false) },
-                            highlight = { Highlight(style = HighlightStyle.Default(color = cardHighlight, angle = -45f), width = 1.dp, blurRadius = 0.5.dp) },
-                            shadow = { Shadow(color = Color.Black.copy(alpha = 0.08f), radius = 8.dp, offset = DpOffset(0.dp, 4.dp)) },
-                            onDrawSurface = { drawRect(cardSurface) }
-                        )
-                        .padding(16.dp)
+                        .offset(y = actualOffset),
+                    verticalArrangement = Arrangement.spacedBy(6.dp)
                 ) {
-                    Column(verticalArrangement = Arrangement.spacedBy(8.dp)) {
-                        Row(
-                            modifier = Modifier.fillMaxWidth(),
-                            horizontalArrangement = Arrangement.SpaceBetween,
-                            verticalAlignment = Alignment.Bottom
+                    items.forEach { item ->
+                        val todayKST = AppConfig.getTodayKST()
+                        val totalSpan = WallpaperGenerator.getDaysBetween(item.startDate, item.targetDate).coerceAtLeast(1)
+                        val remainingDays = WallpaperGenerator.getDaysBetween(todayKST, item.targetDate).coerceAtLeast(0)
+                        val elapsedFromStart = WallpaperGenerator.getDaysBetween(item.startDate, todayKST).coerceAtLeast(0)
+                        val elapsedDots = if (totalSpan > 0)
+                            (elapsedFromStart.toFloat() / totalSpan * 100).toInt().coerceIn(0, 100)
+                        else 100
+                        val progressPercent = (elapsedFromStart.toFloat() / totalSpan.toFloat() * 100f).coerceIn(0f, 100f)
+
+                        Box(
+                            modifier = Modifier
+                                .fillMaxWidth()
+                                .drawBackdrop(
+                                    backdrop = previewBackdrop, shape = { RoundedCornerShape(14.dp) },
+                                    effects = { blur(radius = 14f.dp.toPx()); lens(refractionHeight = 6f.dp.toPx(), refractionAmount = 10f.dp.toPx(), chromaticAberration = false) },
+                                    highlight = { Highlight(style = HighlightStyle.Default(color = cardHighlight, angle = -45f), width = 1.dp, blurRadius = 0.5.dp) },
+                                    shadow = { Shadow(color = Color.Black.copy(alpha = 0.08f), radius = 8.dp, offset = DpOffset(0.dp, 4.dp)) },
+                                    onDrawSurface = { drawRect(cardSurface) }
+                                )
+                                .padding(10.dp)
                         ) {
-                            Column {
-                                PretendardText(config.customLabel, 9, subTextColor, FontWeight.Medium)
-                                PretendardText(if (remainingDays == 0) "D-DAY" else "D-$remainingDays", 20, textColor, FontWeight.Bold)
+                            Column(verticalArrangement = Arrangement.spacedBy(5.dp)) {
+                                Row(
+                                    modifier = Modifier.fillMaxWidth(),
+                                    horizontalArrangement = Arrangement.SpaceBetween,
+                                    verticalAlignment = Alignment.Bottom
+                                ) {
+                                    Column {
+                                        PretendardText(item.label, 7, subTextColor, FontWeight.Medium)
+                                        PretendardText(
+                                            if (remainingDays == 0) "D-DAY" else "D-$remainingDays",
+                                            when { itemCount >= 3 -> 14; itemCount == 2 -> 16; else -> 18 },
+                                            textColor, FontWeight.Bold
+                                        )
+                                    }
+                                    PretendardText(
+                                        String.format("%.1f%%", progressPercent),
+                                        when { itemCount >= 3 -> 10; itemCount == 2 -> 11; else -> 13 },
+                                        textColor, FontWeight.Bold
+                                    )
+                                }
+                                HorizontalDivider(color = dividerColor, thickness = 0.5.dp)
+                                DotGrid(10, 10, 100, elapsedDots, isDark, item.dotShape, item.dotColor, Modifier.fillMaxWidth())
                             }
-                            PretendardText(String.format("%.1f%%", progressPercent), 14, textColor, FontWeight.Bold)
                         }
-
-                        HorizontalDivider(color = dividerColor, thickness = 1.dp)
-
-                        DotGrid(cols, rows, totalDots, elapsedDays, isDark, config.dotShape, config.dotColor, Modifier.fillMaxWidth())
                     }
                 }
             }
@@ -1044,7 +1244,10 @@ fun WallpaperPreviewSection(
             Row(modifier = Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.spacedBy(10.dp)) {
                 Button(
                     onClick = onPickPhoto,
-                    colors = ButtonDefaults.buttonColors(containerColor = textColor, contentColor = if (isDark) Color.Black else Color.White),
+                    colors = ButtonDefaults.buttonColors(
+                        containerColor = textColor,
+                        contentColor = if (isDark) Color.Black else Color.White
+                    ),
                     shape = RoundedCornerShape(12.dp),
                     modifier = Modifier.weight(1f)
                 ) {
@@ -1060,7 +1263,10 @@ fun WallpaperPreviewSection(
                     PretendardText("기본 배경", 13, textColor)
                 }
             }
-            PretendardText(if (useCustom) "사용자 지정 이미지 사용 중" else "기본 배경 사용 중", 11, subTextColor)
+            PretendardText(
+                if (useCustom) "사용자 지정 이미지 사용 중" else "기본 배경 사용 중",
+                11, subTextColor
+            )
         }
     }
 }
@@ -1080,5 +1286,10 @@ private fun copyUriToInternalStorage(context: Context, uri: Uri, fileName: Strin
 private fun formatDateKorean(millis: Long): String {
     val kst = TimeZone.getTimeZone("Asia/Seoul")
     val cal = Calendar.getInstance(kst).apply { timeInMillis = millis }
-    return String.format("%d년 %d월 %d일", cal.get(Calendar.YEAR), cal.get(Calendar.MONTH) + 1, cal.get(Calendar.DAY_OF_MONTH))
+    return String.format(
+        "%d년 %d월 %d일",
+        cal.get(Calendar.YEAR),
+        cal.get(Calendar.MONTH) + 1,
+        cal.get(Calendar.DAY_OF_MONTH)
+    )
 }

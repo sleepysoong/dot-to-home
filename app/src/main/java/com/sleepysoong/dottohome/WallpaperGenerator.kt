@@ -56,14 +56,16 @@ object WallpaperGenerator {
 
     /**
      * Generates wallpaper bitmap for either lock or home screen.
+     * Supports multiple D-Day items stacked vertically.
      * @param isLockScreen true = lock screen, false = home screen
      */
     fun generate(context: Context, width: Int, height: Int, isLockScreen: Boolean): Bitmap {
         val config = AppSettings.getConfig(context)
         val bitmap = Bitmap.createBitmap(width, height, Bitmap.Config.ARGB_8888)
         val canvas = Canvas(bitmap)
+        val todayKST = AppConfig.getTodayKST()
 
-        // 1. Draw background
+        // ── 1. Draw background ──────────────────────────────────────────────────
         val useCustom = if (isLockScreen) config.lockUseCustomImage else config.homeUseCustomImage
         val bgFile = if (isLockScreen) "wallpaper_lock_bg.jpg" else "wallpaper_home_bg.jpg"
         var bgBitmap: Bitmap? = null
@@ -95,180 +97,212 @@ object WallpaperGenerator {
             canvas.drawColor(Color.WHITE)
         }
 
-        // 2. Calculate D-Day info
-        val todayKST = AppConfig.getTodayKST()
-        val totalSpan = getDaysBetween(config.startDate, config.targetDate).coerceAtLeast(1)
-        val remainingDays = getDaysBetween(todayKST, config.targetDate).coerceAtLeast(0)
-        val elapsedFromStart = getDaysBetween(config.startDate, todayKST).coerceAtLeast(0)
-
-        val (cols, rows, totalDots) = Triple(10, 10, 100)
-
-        // Map elapsed into totalDots scale
-        val elapsedDots = if (totalSpan > 0) {
-            (elapsedFromStart.toFloat() / totalSpan * 100).toInt().coerceIn(0, 100)
-        } else {
-            100
-        }
-        val progressPercent = (elapsedFromStart.toFloat() / totalSpan.toFloat() * 100f).coerceIn(0f, 100f)
-
-        // 3. Dot position from config
+        // ── 2. Layout calculation ───────────────────────────────────────────────
         val dotOffsetY = if (isLockScreen) config.lockDotOffsetY else config.homeDotOffsetY
+        val items = config.ddayItems.ifEmpty { listOf(DDayItem()) }
+        val itemCount = items.size
 
-        // 4. Card dimensions
-        val minCardWidth = (width * 0.6f).toInt()
-        val maxCardWidth = (width * 0.88f).toInt()
-
-        var dotRadius = 12f
-        var dotSpacing = 16f
-
-        var gridWidth = cols * (dotRadius * 2 + dotSpacing) - dotSpacing
-        var gridHeight = rows * (dotRadius * 2 + dotSpacing) - dotSpacing
-
-        val cardPadding = 50f
-
-        if (gridWidth + cardPadding * 2 > maxCardWidth) {
-            val scale = (maxCardWidth - cardPadding * 2) / gridWidth
-            dotRadius *= scale
-            dotSpacing *= scale
-            gridWidth = cols * (dotRadius * 2 + dotSpacing) - dotSpacing
-            gridHeight = rows * (dotRadius * 2 + dotSpacing) - dotSpacing
+        // Card width fraction based on item count
+        val cardWidthFraction = when {
+            itemCount >= 3 -> 0.82f
+            itemCount == 2 -> 0.85f
+            else -> 0.88f
         }
-
-        val cardWidth = maxOf(minCardWidth, (gridWidth + cardPadding * 2).toInt())
-        val cardHeaderHeight = 200f
-        val cardHeight = (cardHeaderHeight + gridHeight + cardPadding * 2).toInt()
-
+        val cardWidth = (width * cardWidthFraction).toInt()
         val cardLeft = (width - cardWidth) / 2f
-        val maxCardTop = (height - cardHeight).toFloat().coerceAtLeast(0f)
-        val cardTop = (dotOffsetY * maxCardTop).coerceIn(0f, maxCardTop)
         val cardRight = cardLeft + cardWidth
-        val cardBottom = cardTop + cardHeight
 
-        val cardRect = RectF(cardLeft, cardTop, cardRight, cardBottom)
-        val cornerRadius = 48f
-
-        // 5. Frosted glass blur behind card
-        try {
-            val cropRect = Rect(
-                cardLeft.toInt().coerceAtLeast(0),
-                cardTop.toInt().coerceAtLeast(0),
-                cardRight.toInt().coerceAtMost(width),
-                cardBottom.toInt().coerceAtMost(height)
-            )
-            if (cropRect.width() > 0 && cropRect.height() > 0) {
-                val croppedBg = Bitmap.createBitmap(bitmap, cropRect.left, cropRect.top, cropRect.width(), cropRect.height())
-                val scaleFactor = 4
-                val miniWidth = (croppedBg.width / scaleFactor).coerceAtLeast(1)
-                val miniHeight = (croppedBg.height / scaleFactor).coerceAtLeast(1)
-                val miniBg = Bitmap.createScaledBitmap(croppedBg, miniWidth, miniHeight, true)
-                val blurredMini = boxBlur(miniBg, 6)
-                val blurredBg = Bitmap.createScaledBitmap(blurredMini, croppedBg.width, croppedBg.height, true)
-
-                canvas.save()
-                val clipPath = Path().apply {
-                    addRoundRect(cardRect, cornerRadius, cornerRadius, Path.Direction.CW)
-                }
-                canvas.clipPath(clipPath)
-                canvas.drawBitmap(blurredBg, cardLeft, cardTop, null)
-                canvas.restore()
-
-                croppedBg.recycle()
-                miniBg.recycle()
-                blurredMini.recycle()
-                blurredBg.recycle()
-            }
-        } catch (e: Exception) {
-            e.printStackTrace()
+        // Dot grid sizing
+        val cols = 10
+        val rows = 10
+        val dotRadius = when {
+            itemCount >= 3 -> 7f
+            itemCount == 2 -> 9f
+            else -> 12f
         }
+        val dotSpacing = dotRadius * 0.8f
+        val gridWidth = cols * (dotRadius * 2 + dotSpacing) - dotSpacing
+        val gridHeight = rows * (dotRadius * 2 + dotSpacing) - dotSpacing
 
-        // 6. Card surface overlay - white glass
-        val cardPaint = Paint().apply {
-            isAntiAlias = true
-            color = Color.WHITE
-            alpha = 180
-            style = Paint.Style.FILL
+        val cardPadding = 40f
+        val cardHeaderHeight = when {
+            itemCount >= 3 -> 140f
+            itemCount == 2 -> 160f
+            else -> 180f
         }
-        canvas.drawRoundRect(cardRect, cornerRadius, cornerRadius, cardPaint)
+        val cardHeight = (cardHeaderHeight + gridHeight + cardPadding * 2).toInt()
+        val cardGap = 20f
 
-        val borderPaint = Paint().apply {
-            isAntiAlias = true
-            style = Paint.Style.STROKE
-            strokeWidth = 2f
-            color = Color.parseColor("#E0E0E0")
-        }
-        canvas.drawRoundRect(cardRect, cornerRadius, cornerRadius, borderPaint)
+        // Total height of all cards + gaps
+        val totalCardsHeight = itemCount * cardHeight + (itemCount - 1) * cardGap
 
-        // 7. Draw D-Day text with Pretendard font and -5% letter spacing
+        // Offset group vertically
+        val maxGroupTop = (height - totalCardsHeight).toFloat().coerceAtLeast(0f)
+        val groupTop = (dotOffsetY * maxGroupTop).coerceIn(0f, maxGroupTop)
+
+        val cornerRadius = 40f
         val textColor = Color.parseColor("#1A1A1A")
         val subTextColor = Color.parseColor("#888888")
 
-        // letterSpacing = -0.05 em (fontSize * -0.05)
-        val labelPaint = Paint().apply {
-            isAntiAlias = true
-            color = subTextColor
-            textSize = 30f
-            typeface = getPretendardRegular(context)
-            textAlign = Paint.Align.LEFT
-            letterSpacing = -0.05f
-        }
+        // ── 3. Draw each card ───────────────────────────────────────────────────
+        items.forEachIndexed { idx, item ->
+            val cardTop = groupTop + idx * (cardHeight + cardGap)
+            val cardBottom = cardTop + cardHeight
+            val cardRect = RectF(cardLeft, cardTop, cardRight, cardBottom)
 
-        val ddayPaint = Paint().apply {
-            isAntiAlias = true
-            color = textColor
-            textSize = 72f
-            typeface = getPretendardBold(context)
-            textAlign = Paint.Align.LEFT
-            letterSpacing = -0.05f
-        }
+            // 3a. Frosted glass blur behind card
+            try {
+                val cropRect = Rect(
+                    cardLeft.toInt().coerceAtLeast(0),
+                    cardTop.toInt().coerceAtLeast(0),
+                    cardRight.toInt().coerceAtMost(width),
+                    cardBottom.toInt().coerceAtMost(height)
+                )
+                if (cropRect.width() > 0 && cropRect.height() > 0) {
+                    val croppedBg = Bitmap.createBitmap(
+                        bitmap, cropRect.left, cropRect.top, cropRect.width(), cropRect.height()
+                    )
+                    val scaleFactor = 4
+                    val miniWidth = (croppedBg.width / scaleFactor).coerceAtLeast(1)
+                    val miniHeight = (croppedBg.height / scaleFactor).coerceAtLeast(1)
+                    val miniBg = Bitmap.createScaledBitmap(croppedBg, miniWidth, miniHeight, true)
+                    val blurredMini = boxBlur(miniBg, 6)
+                    val blurredBg = Bitmap.createScaledBitmap(
+                        blurredMini, croppedBg.width, croppedBg.height, true
+                    )
 
-        val percentPaint = Paint().apply {
-            isAntiAlias = true
-            color = textColor
-            textSize = 44f
-            typeface = getPretendardBold(context)
-            textAlign = Paint.Align.RIGHT
-            letterSpacing = -0.05f
-        }
+                    canvas.save()
+                    val clipPath = Path().apply {
+                        addRoundRect(cardRect, cornerRadius, cornerRadius, Path.Direction.CW)
+                    }
+                    canvas.clipPath(clipPath)
+                    canvas.drawBitmap(blurredBg, cardLeft, cardTop, null)
+                    canvas.restore()
 
-        val textY = cardTop + cardPadding + 50f
-        canvas.drawText(config.customLabel, cardLeft + cardPadding, textY - 40f, labelPaint)
-        val ddayStr = if (remainingDays == 0) "D-DAY" else "D-$remainingDays"
-        canvas.drawText(ddayStr, cardLeft + cardPadding, textY + 35f, ddayPaint)
-        val percentStr = String.format("%.1f%%", progressPercent)
-        canvas.drawText(percentStr, cardRight - cardPadding, textY + 35f, percentPaint)
+                    croppedBg.recycle()
+                    miniBg.recycle()
+                    blurredMini.recycle()
+                    blurredBg.recycle()
+                }
+            } catch (e: Exception) {
+                e.printStackTrace()
+            }
 
-        // Divider
-        val dividerPaint = Paint().apply {
-            color = Color.parseColor("#E0E0E0")
-            strokeWidth = 2f
-        }
-        val dividerY = textY + 80f
-        canvas.drawLine(cardLeft + cardPadding, dividerY, cardRight - cardPadding, dividerY, dividerPaint)
+            // 3b. Card surface overlay – white glass
+            val cardPaint = Paint().apply {
+                isAntiAlias = true
+                color = Color.WHITE
+                alpha = 180
+                style = Paint.Style.FILL
+            }
+            canvas.drawRoundRect(cardRect, cornerRadius, cornerRadius, cardPaint)
 
-        // 8. Draw dot grid
-        val gridStartX = cardLeft + (cardWidth - gridWidth) / 2f + dotRadius
-        val gridStartY = dividerY + 40f + dotRadius
+            val borderPaint = Paint().apply {
+                isAntiAlias = true
+                style = Paint.Style.STROKE
+                strokeWidth = 2f
+                color = Color.parseColor("#E0E0E0")
+            }
+            canvas.drawRoundRect(cardRect, cornerRadius, cornerRadius, borderPaint)
 
-        val dotBaseColor = if (config.dotColor == DotColor.ADAPTIVE) textColor else Color.parseColor(config.dotColor.hex)
-        val fillPaint = Paint().apply {
-            isAntiAlias = true
-            color = dotBaseColor
-            style = Paint.Style.FILL
-        }
+            // 3c. D-Day info for this item
+            val totalSpan = getDaysBetween(item.startDate, item.targetDate).coerceAtLeast(1)
+            val remainingDays = getDaysBetween(todayKST, item.targetDate).coerceAtLeast(0)
+            val elapsedFromStart = getDaysBetween(item.startDate, todayKST).coerceAtLeast(0)
+            val elapsedDots = if (totalSpan > 0)
+                (elapsedFromStart.toFloat() / totalSpan * 100).toInt().coerceIn(0, 100)
+            else 100
+            val progressPercent = (elapsedFromStart.toFloat() / totalSpan.toFloat() * 100f)
+                .coerceIn(0f, 100f)
 
-        val emptyPaint = Paint().apply {
-            isAntiAlias = true
-            color = Color.parseColor("#D0D0D0")
-            style = Paint.Style.FILL
-        }
+            // 3d. Text sizes scale with item count
+            val labelSize = when {
+                itemCount >= 3 -> 24f
+                itemCount == 2 -> 27f
+                else -> 30f
+            }
+            val ddaySize = when {
+                itemCount >= 3 -> 52f
+                itemCount == 2 -> 60f
+                else -> 72f
+            }
+            val percentSize = when {
+                itemCount >= 3 -> 34f
+                itemCount == 2 -> 38f
+                else -> 44f
+            }
 
-        for (i in 0 until totalDots) {
-            val rIdx = i / cols
-            val cIdx = i % cols
-            val cx = gridStartX + cIdx * (dotRadius * 2 + dotSpacing)
-            val cy = gridStartY + rIdx * (dotRadius * 2 + dotSpacing)
-            val isElapsed = i < elapsedDots
-            drawShape(canvas, cx, cy, dotRadius, config.dotShape, if (isElapsed) fillPaint else emptyPaint)
+            val labelPaint = Paint().apply {
+                isAntiAlias = true
+                color = subTextColor
+                textSize = labelSize
+                typeface = getPretendardRegular(context)
+                textAlign = Paint.Align.LEFT
+                letterSpacing = -0.05f
+            }
+            val ddayPaint = Paint().apply {
+                isAntiAlias = true
+                color = textColor
+                textSize = ddaySize
+                typeface = getPretendardBold(context)
+                textAlign = Paint.Align.LEFT
+                letterSpacing = -0.05f
+            }
+            val percentPaint = Paint().apply {
+                isAntiAlias = true
+                color = textColor
+                textSize = percentSize
+                typeface = getPretendardBold(context)
+                textAlign = Paint.Align.RIGHT
+                letterSpacing = -0.05f
+            }
+
+            val textY = cardTop + cardPadding + labelSize + 10f
+            val labelX = cardLeft + cardPadding
+            val valueY = textY + ddaySize * 0.85f
+
+            canvas.drawText(item.label, labelX, textY, labelPaint)
+            val ddayStr = if (remainingDays == 0) "D-DAY" else "D-$remainingDays"
+            canvas.drawText(ddayStr, labelX, valueY, ddayPaint)
+            val percentStr = String.format("%.1f%%", progressPercent)
+            canvas.drawText(percentStr, cardRight - cardPadding, valueY, percentPaint)
+
+            // Divider
+            val dividerPaint = Paint().apply {
+                color = Color.parseColor("#E0E0E0")
+                strokeWidth = 2f
+            }
+            val dividerY = valueY + 28f
+            canvas.drawLine(labelX, dividerY, cardRight - cardPadding, dividerY, dividerPaint)
+
+            // 3e. Dot grid
+            val dotBaseColor = if (item.dotColor == DotColor.ADAPTIVE)
+                textColor
+            else
+                Color.parseColor(item.dotColor.hex)
+
+            val fillPaint = Paint().apply {
+                isAntiAlias = true
+                color = dotBaseColor
+                style = Paint.Style.FILL
+            }
+            val emptyPaint = Paint().apply {
+                isAntiAlias = true
+                color = Color.parseColor("#D0D0D0")
+                style = Paint.Style.FILL
+            }
+
+            val gridStartX = cardLeft + (cardWidth - gridWidth) / 2f + dotRadius
+            val gridStartY = dividerY + 30f + dotRadius
+
+            for (i in 0 until 100) {
+                val rIdx = i / cols
+                val cIdx = i % cols
+                val cx = gridStartX + cIdx * (dotRadius * 2 + dotSpacing)
+                val cy = gridStartY + rIdx * (dotRadius * 2 + dotSpacing)
+                val isElapsed = i < elapsedDots
+                drawShape(canvas, cx, cy, dotRadius, item.dotShape, if (isElapsed) fillPaint else emptyPaint)
+            }
         }
 
         return bitmap
@@ -304,7 +338,10 @@ object WallpaperGenerator {
                 canvas.drawCircle(cx, cy, radius, paint)
             }
             DotShape.SQUARE -> {
-                canvas.drawRoundRect(cx - radius, cy - radius, cx + radius, cy + radius, radius * 0.3f, radius * 0.3f, paint)
+                canvas.drawRoundRect(
+                    cx - radius, cy - radius, cx + radius, cy + radius,
+                    radius * 0.3f, radius * 0.3f, paint
+                )
             }
             DotShape.DIAMOND -> {
                 val path = android.graphics.Path()
