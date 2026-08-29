@@ -120,22 +120,24 @@ object WallpaperGenerator {
         }
         val cardGap = 20f
 
-        // Pre-calculate per-item card heights (grid size varies per layout)
+        val maxCardHeight = when (itemCount) {
+            1 -> height * 0.55f
+            2 -> height * 0.38f
+            else -> height * 0.26f
+        }
+        val maxGridHeight = (maxCardHeight - cardHeaderHeight - cardPadding * 2).coerceAtLeast(20f)
+        val availableWidth = (cardWidth - cardPadding * 2).toFloat().coerceAtLeast(20f)
+        val spacingRatio = 0.8f
+
+        // Pre-calculate per-item card heights and dot sizing dynamically from available card width
         val cardHeights = items.map { item ->
             val cols = item.dotGridLayout.cols
             val rows = item.dotGridLayout.rows
-            val baseRadius = when {
-                itemCount >= 3 -> 7f
-                itemCount == 2 -> 9f
-                else -> 12f
-            }
-            val dotRadius = when (cols) {
-                50 -> baseRadius * 0.45f
-                20 -> baseRadius * 0.75f
-                else -> baseRadius
-            }
-            val dotSpacing = dotRadius * 0.8f
-            val gridHeight = rows * (dotRadius * 2 + dotSpacing) - dotSpacing
+            val targetDiameterFromWidth = availableWidth / (cols + (cols - 1) * spacingRatio)
+            val maxDiameterFromHeight = maxGridHeight / (rows + (rows - 1) * spacingRatio)
+            val dotDiameter = Math.min(targetDiameterFromWidth, maxDiameterFromHeight)
+            val dotSpacing = dotDiameter * spacingRatio
+            val gridHeight = rows * dotDiameter + (rows - 1) * dotSpacing
             (cardHeaderHeight + gridHeight + cardPadding * 2).toInt()
         }
 
@@ -282,21 +284,15 @@ object WallpaperGenerator {
             val dividerY = valueY + 28f
             canvas.drawLine(labelX, dividerY, cardRight - cardPadding, dividerY, dividerPaint)
 
-            // 3e. Dot grid
+            // 3e. Dot grid (dynamically scaled to fill card width)
             val cols = item.dotGridLayout.cols
             val rows = item.dotGridLayout.rows
-            val baseRadius = when {
-                itemCount >= 3 -> 7f
-                itemCount == 2 -> 9f
-                else -> 12f
-            }
-            val dotRadius = when (cols) {
-                50 -> baseRadius * 0.45f
-                20 -> baseRadius * 0.75f
-                else -> baseRadius
-            }
-            val dotSpacing = dotRadius * 0.8f
-            val gridWidth = cols * (dotRadius * 2 + dotSpacing) - dotSpacing
+            val targetDiameterFromWidth = availableWidth / (cols + (cols - 1) * spacingRatio)
+            val maxDiameterFromHeight = maxGridHeight / (rows + (rows - 1) * spacingRatio)
+            val dotDiameter = Math.min(targetDiameterFromWidth, maxDiameterFromHeight)
+            val dotRadius = dotDiameter / 2f
+            val dotSpacing = dotDiameter * spacingRatio
+            val gridWidth = cols * dotDiameter + (cols - 1) * dotSpacing
 
             val dotBaseColor = if (item.dotColor == DotColor.ADAPTIVE)
                 textColor
@@ -320,8 +316,8 @@ object WallpaperGenerator {
             for (i in 0 until 100) {
                 val rIdx = i / cols
                 val cIdx = i % cols
-                val cx = gridStartX + cIdx * (dotRadius * 2 + dotSpacing)
-                val cy = gridStartY + rIdx * (dotRadius * 2 + dotSpacing)
+                val cx = gridStartX + cIdx * (dotDiameter + dotSpacing)
+                val cy = gridStartY + rIdx * (dotDiameter + dotSpacing)
                 val isElapsed = i < elapsedDots
                 drawShape(canvas, cx, cy, dotRadius, item.dotShape, if (isElapsed) fillPaint else emptyPaint)
             }
