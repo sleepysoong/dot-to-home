@@ -169,7 +169,7 @@ fun WallpaperPreviewSection(
                                     )
                                 }
                                 HorizontalDivider(color = dividerColor, thickness = 0.5.dp)
-                                DotGrid(10, 10, 100, elapsedDots, isDark, item.dotShape, item.dotColor, Modifier.fillMaxWidth())
+                                DotGrid(item.dotGridLayout.cols, item.dotGridLayout.rows, 100, elapsedDots, isDark, item.dotShape, item.dotColor, Modifier.fillMaxWidth())
                             }
                         }
                     }
