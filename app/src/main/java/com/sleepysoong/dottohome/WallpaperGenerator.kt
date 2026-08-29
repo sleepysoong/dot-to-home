@@ -112,29 +112,35 @@ object WallpaperGenerator {
         val cardLeft = (width - cardWidth) / 2f
         val cardRight = cardLeft + cardWidth
 
-        // Dot grid sizing
-        val cols = 10
-        val rows = 10
-        val dotRadius = when {
-            itemCount >= 3 -> 7f
-            itemCount == 2 -> 9f
-            else -> 12f
-        }
-        val dotSpacing = dotRadius * 0.8f
-        val gridWidth = cols * (dotRadius * 2 + dotSpacing) - dotSpacing
-        val gridHeight = rows * (dotRadius * 2 + dotSpacing) - dotSpacing
-
         val cardPadding = 40f
         val cardHeaderHeight = when {
             itemCount >= 3 -> 140f
             itemCount == 2 -> 160f
             else -> 180f
         }
-        val cardHeight = (cardHeaderHeight + gridHeight + cardPadding * 2).toInt()
         val cardGap = 20f
 
+        // Pre-calculate per-item card heights (grid size varies per layout)
+        val cardHeights = items.map { item ->
+            val cols = item.dotGridLayout.cols
+            val rows = item.dotGridLayout.rows
+            val baseRadius = when {
+                itemCount >= 3 -> 7f
+                itemCount == 2 -> 9f
+                else -> 12f
+            }
+            val dotRadius = when (cols) {
+                50 -> baseRadius * 0.45f
+                20 -> baseRadius * 0.75f
+                else -> baseRadius
+            }
+            val dotSpacing = dotRadius * 0.8f
+            val gridHeight = rows * (dotRadius * 2 + dotSpacing) - dotSpacing
+            (cardHeaderHeight + gridHeight + cardPadding * 2).toInt()
+        }
+
         // Total height of all cards + gaps
-        val totalCardsHeight = itemCount * cardHeight + (itemCount - 1) * cardGap
+        val totalCardsHeight = cardHeights.sum() + ((itemCount - 1) * cardGap).toInt()
 
         // Offset group vertically
         val maxGroupTop = (height - totalCardsHeight).toFloat().coerceAtLeast(0f)
@@ -146,7 +152,8 @@ object WallpaperGenerator {
 
         // ── 3. Draw each card ───────────────────────────────────────────────────
         items.forEachIndexed { idx, item ->
-            val cardTop = groupTop + idx * (cardHeight + cardGap)
+            val cardHeight = cardHeights[idx]
+            val cardTop = groupTop + cardHeights.take(idx).sum() + idx * cardGap
             val cardBottom = cardTop + cardHeight
             val cardRect = RectF(cardLeft, cardTop, cardRight, cardBottom)
 
@@ -276,6 +283,21 @@ object WallpaperGenerator {
             canvas.drawLine(labelX, dividerY, cardRight - cardPadding, dividerY, dividerPaint)
 
             // 3e. Dot grid
+            val cols = item.dotGridLayout.cols
+            val rows = item.dotGridLayout.rows
+            val baseRadius = when {
+                itemCount >= 3 -> 7f
+                itemCount == 2 -> 9f
+                else -> 12f
+            }
+            val dotRadius = when (cols) {
+                50 -> baseRadius * 0.45f
+                20 -> baseRadius * 0.75f
+                else -> baseRadius
+            }
+            val dotSpacing = dotRadius * 0.8f
+            val gridWidth = cols * (dotRadius * 2 + dotSpacing) - dotSpacing
+
             val dotBaseColor = if (item.dotColor == DotColor.ADAPTIVE)
                 textColor
             else
