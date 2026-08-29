@@ -43,6 +43,7 @@ import com.sleepysoong.dottohome.AppConfig
 import com.sleepysoong.dottohome.AppSettings
 import com.sleepysoong.dottohome.DDayItem
 import com.sleepysoong.dottohome.DotColor
+import com.sleepysoong.dottohome.DotGridLayout
 import com.sleepysoong.dottohome.DotShape
 import com.sleepysoong.dottohome.WallpaperGenerator
 import com.sleepysoong.dottohome.ui.components.*
@@ -201,7 +202,9 @@ fun DotToHomeDashboard(isDark: Boolean) {
                     val totalSpan = WallpaperGenerator.getDaysBetween(item.startDate, item.targetDate).coerceAtLeast(1)
                     val remainingDays = WallpaperGenerator.getDaysBetween(todayKST, item.targetDate).coerceAtLeast(0)
                     val elapsedFromStart = WallpaperGenerator.getDaysBetween(item.startDate, todayKST).coerceAtLeast(0)
-                    val cols = 10; val rows = 10; val totalDots = 100
+                    val cols = item.dotGridLayout.cols
+                    val rows = item.dotGridLayout.rows
+                    val totalDots = 100
                     val elapsedDots = if (totalSpan > 0)
                         (elapsedFromStart.toFloat() / totalSpan * 100).toInt().coerceIn(0, 100)
                     else 100
@@ -405,6 +408,47 @@ fun DotToHomeDashboard(isDark: Boolean) {
                                         ) {
                                             PretendardText(
                                                 shape.label, 12, chipText,
+                                                if (isSelected) FontWeight.Bold else FontWeight.Medium
+                                            )
+                                        }
+                                    }
+                                }
+
+                                Spacer(Modifier.height(12.dp))
+
+                                // ── Layout selector ──────────────────────────────
+                                PretendardText("도트 배열", 12, subTextColor, FontWeight.Medium)
+                                Spacer(Modifier.height(6.dp))
+                                Row(
+                                    modifier = Modifier
+                                        .fillMaxWidth()
+                                        .horizontalScroll(rememberScrollState()),
+                                    horizontalArrangement = Arrangement.spacedBy(8.dp)
+                                ) {
+                                    DotGridLayout.values().forEach { layout ->
+                                        val isSelected = item.dotGridLayout == layout
+                                        val chipBg = if (isSelected) {
+                                            if (isDark) Color.White else Color(0xFF1A1A1A)
+                                        } else {
+                                            if (isDark) Color(0xFF222222) else Color(0xFFE8E8E8)
+                                        }
+                                        val chipText = if (isSelected) {
+                                            if (isDark) Color.Black else Color.White
+                                        } else subTextColor
+
+                                        Box(
+                                            modifier = Modifier
+                                                .clip(Capsule())
+                                                .background(chipBg)
+                                                .clickable {
+                                                    val newItems = config.ddayItems.toMutableList()
+                                                    newItems[index] = item.copy(dotGridLayout = layout)
+                                                    updateConfig(config.copy(ddayItems = newItems))
+                                                }
+                                                .padding(horizontal = 16.dp, vertical = 8.dp)
+                                        ) {
+                                            PretendardText(
+                                                layout.label, 12, chipText,
                                                 if (isSelected) FontWeight.Bold else FontWeight.Medium
                                             )
                                         }
