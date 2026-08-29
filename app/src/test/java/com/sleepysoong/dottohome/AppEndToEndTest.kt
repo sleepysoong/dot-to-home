@@ -212,6 +212,66 @@ class AppEndToEndTest {
         unmockkObject(AppSettings)
     }
 
+    // ── Grid Layout Tests ───────────────────────────────────────────────────
+
+    @Test
+    fun testGridLayoutPersistence() {
+        val config = AppConfig(
+            ddayItems = listOf(
+                DDayItem(label = "Layout Test", dotGridLayout = DotGridLayout.TWENTY_BY_FIVE)
+            )
+        )
+        AppSettings.saveConfig(context, config)
+
+        val loaded = AppSettings.getConfig(context)
+        assertEquals(DotGridLayout.TWENTY_BY_FIVE, loaded.ddayItems[0].dotGridLayout)
+    }
+
+    @Test
+    fun testGridLayoutMigration() {
+        // Simulate old JSON format without dotGridLayout field
+        val oldJson = """{"lockEnabled":true,"homeEnabled":true,"ddayItems":[{"id":"test","label":"Old Item","startDate":0,"targetDate":100000,"dotShape":"CIRCLE","dotColor":"ADAPTIVE"}]}"""
+        val prefs = context.getSharedPreferences("dot_to_home_prefs", Context.MODE_PRIVATE)
+        prefs.edit().putString("app_config", oldJson).commit()
+
+        val loaded = AppSettings.getConfig(context)
+        assertEquals(1, loaded.ddayItems.size)
+        assertEquals(DotGridLayout.TEN_BY_TEN, loaded.ddayItems[0].dotGridLayout)
+    }
+
+    @Test
+    fun testWallpaperGenerationWithDifferentLayouts() {
+        DotGridLayout.values().forEach { layout ->
+            val config = AppConfig(
+                ddayItems = listOf(DDayItem(label = "Layout ${layout.label}", dotGridLayout = layout))
+            )
+            AppSettings.saveConfig(context, config)
+
+            val bitmap = WallpaperGenerator.generate(context, 1080, 2400, isLockScreen = true)
+            assertNotNull("Bitmap should not be null for layout ${layout.label}", bitmap)
+            assertEquals(1080, bitmap.width)
+            assertEquals(2400, bitmap.height)
+        }
+    }
+
+    @Test
+    fun testMixedLayoutCards() {
+        val config = AppConfig(
+            ddayItems = listOf(
+                DDayItem(label = "Card 1", dotGridLayout = DotGridLayout.TEN_BY_TEN),
+                DDayItem(label = "Card 2", dotGridLayout = DotGridLayout.TWENTY_BY_FIVE),
+                DDayItem(label = "Card 3", dotGridLayout = DotGridLayout.FIFTY_BY_TWO)
+            )
+        )
+        AppSettings.saveConfig(context, config)
+
+        val loaded = AppSettings.getConfig(context)
+        assertEquals(3, loaded.ddayItems.size)
+        assertEquals(DotGridLayout.TEN_BY_TEN, loaded.ddayItems[0].dotGridLayout)
+        assertEquals(DotGridLayout.TWENTY_BY_FIVE, loaded.ddayItems[1].dotGridLayout)
+        assertEquals(DotGridLayout.FIFTY_BY_TWO, loaded.ddayItems[2].dotGridLayout)
+    }
+
     // ── Tier 3: Cross-Feature Combinations ────────────────────────────────────
 
     @Test
