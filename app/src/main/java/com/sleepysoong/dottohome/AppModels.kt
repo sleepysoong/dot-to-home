@@ -39,7 +39,8 @@ data class DDayItem(
     val startDate: Long = System.currentTimeMillis(),
     val targetDate: Long = System.currentTimeMillis() + 100L * 24 * 60 * 60 * 1000,
     val dotShape: DotShape = DotShape.CIRCLE,
-    val dotColor: DotColor = DotColor.ADAPTIVE
+    val dotColor: DotColor = DotColor.ADAPTIVE,
+    val dotGridLayout: DotGridLayout = DotGridLayout.TEN_BY_TEN
 )
 
 // ── AppConfig ─────────────────────────────────────────────────────────────────
@@ -104,7 +105,13 @@ object AppSettings {
     // convert to the new ddayItems format
     private fun migrateFromRaw(raw: RawAppConfig): AppConfig {
         val items = if (raw.ddayItems != null && raw.ddayItems.isNotEmpty()) {
-            raw.ddayItems
+            // Ensure dotGridLayout is not null (old JSON may lack this field)
+            raw.ddayItems.map { item ->
+                if (item.dotGridLayout == null) {
+                    @Suppress("SENSELESS_COMPARISON")
+                    item.copy(dotGridLayout = DotGridLayout.TEN_BY_TEN)
+                } else item
+            }
         } else {
             // Legacy: single item from top-level fields
             listOf(
@@ -150,15 +157,16 @@ object AppSettings {
 
 // ── GridCalculator (kept for compatibility) ────────────────────────────────────
 
-enum class DotGridType(val label: String) {
-    TEN_TEN("10x10")
+enum class DotGridLayout(val label: String, val cols: Int, val rows: Int) {
+    TEN_BY_TEN("10x10", 10, 10),
+    TWENTY_BY_FIVE("20x5", 20, 5),
+    FIFTY_BY_TWO("50x2", 50, 2)
 }
 
 object GridCalculator {
     fun calculate(
-        type: DotGridType = DotGridType.TEN_TEN,
-        totalDays: Int = 100
+        type: DotGridLayout = DotGridLayout.TEN_BY_TEN
     ): Triple<Int, Int, Int> {
-        return Triple(10, 10, 100)
+        return Triple(type.cols, type.rows, 100)
     }
 }
